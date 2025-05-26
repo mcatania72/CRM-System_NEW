@@ -1,0 +1,36 @@
+{
+  "name": "crm-frontend",
+  "version": "1.0.0",
+  "description": "CRM Frontend with React and Material-UI",
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.14.2",
+    "@mui/material": "^5.14.5",
+    "@mui/icons-material": "^5.14.3",
+    "@emotion/react": "^11.11.1",
+    "@emotion/styled": "^11.11.0",
+    "@mui/x-data-grid": "^6.10.2",
+    "@mui/x-date-pickers": "^6.10.2",
+    "axios": "^1.4.0",
+    "recharts": "^2.8.0",
+    "date-fns": "^2.30.0",
+    "react-hook-form": "^7.45.2",
+    "@hookform/resolvers": "^3.1.1",
+    "yup": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.17",
+    "@types/react-dom": "^18.2.7",
+    "@types/node": "^20.4.8",
+    "typescript": "^5.1.6",
+    "vite": "^4.4.8",
+    "@vitejs/plugin-react": "^4.0.3"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "start": "vite preview --port 3000 --host"
+  }
+}
