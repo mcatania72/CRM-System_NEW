@@ -166,9 +166,6 @@ show_status() {
     echo "  Email: admin@crm.local"
     echo "  Password: admin123"
     echo ""
-    echo "Per fermare: ./deploy.sh stop"
-    echo "Per riavviare: ./deploy.sh restart"
-    echo ""
 }
 
 # Funzione per fermare l'applicazione
@@ -257,17 +254,9 @@ start_frontend() {
         npm install
     fi
     
-    # Prova build
-    log_info "Build frontend..."
-    if npm run build > "$FRONTEND_LOG" 2>&1; then
-        log_success "Build frontend completata"
-        # Avvia preview
-        nohup npm run preview > "$FRONTEND_LOG" 2>&1 &
-    else
-        log_warning "Build frontend fallita, provo in modalità development"
-        # Avvia in dev mode
-        nohup npm run dev > "$FRONTEND_LOG" 2>&1 &
-    fi
+    # FORZA DEV MODE per assicurare proxy funzionante
+    log_info "Avvio frontend in modalità development (con proxy)..."
+    nohup npm run dev > "$FRONTEND_LOG" 2>&1 &
     
     local frontend_pid=$!
     echo $frontend_pid > "$FRONTEND_PID_FILE"
@@ -327,15 +316,13 @@ start_application() {
             echo "  Frontend: http://localhost:3000"
             echo "  Backend API: http://localhost:3001/api"
             echo ""
+            echo "Accesso esterno (dalla tua VM host):"
+            echo "  Frontend: http://192.168.1.29:3000"
+            echo "  Backend API: http://192.168.1.29:3001/api"
+            echo ""
             echo "Credenziali di accesso:"
             echo "  Email: admin@crm.local"
             echo "  Password: admin123"
-            echo ""
-            echo "Comandi utili:"
-            echo "  ./deploy.sh status   - Verifica stato applicazione"
-            echo "  ./deploy.sh stop     - Ferma applicazione"
-            echo "  ./deploy.sh restart  - Riavvia applicazione"
-            echo "  ./test.sh           - Esegui test"
             echo ""
         else
             log_error "Errore nell'avvio del frontend"
@@ -357,7 +344,7 @@ case "${1:-start}" in
         ;;
     "restart")
         stop_application
-        sleep 3
+        sleep 2
         start_application
         ;;
     "status")
