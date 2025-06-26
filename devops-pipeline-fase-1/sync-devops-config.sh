@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# sync-devops-config.sh v3.1
+# sync-devops-config.sh v3.2
 # Script per sincronizzare la configurazione DevOps dalla repository GitHub
-# Fix del bug local nella linea 316
+# Fix gestione symlink e directory di lavoro
 
 set -e  # Exit on any error
 
@@ -45,6 +45,22 @@ print_success() {
 print_warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1"
     log "WARNING: $1"
+}
+
+# Funzione per gestire il cambio directory sicuro
+safe_cd_home() {
+    print_status $BLUE "Passaggio a directory home per sync sicuro..."
+    
+    # Forza il cambio alla home directory
+    cd "$HOME"
+    
+    # Verifica che siamo nella home
+    if [ "$(pwd)" != "$HOME" ]; then
+        print_error "Impossibile cambiare directory a: $HOME"
+        exit 1
+    fi
+    
+    print_success "Directory di lavoro: $(pwd)"
 }
 
 # Funzione per fermare tutti i processi CRM
@@ -174,12 +190,16 @@ verify_file_integrity() {
 # Banner
 echo -e "${BLUE}"
 echo "======================================="
-echo "   CRM System - DevOps Sync Script v3.1"
+echo "   CRM System - DevOps Sync Script v3.2"
 echo "   FASE 1: Validazione Base"
 echo "======================================="
 echo -e "${NC}"
 
-print_status $BLUE "Inizializzazione sync DevOps config v3.1..."
+print_status $BLUE "Inizializzazione sync DevOps config v3.2..."
+
+# STEP 0: Verifica e cambia directory di lavoro
+print_status $BLUE "Directory corrente: $(pwd)"
+safe_cd_home
 
 # Verifica prerequisiti
 if ! command -v git &> /dev/null; then
@@ -276,11 +296,25 @@ else
     exit 1
 fi
 
-# STEP 9: Rendere eseguibili tutti gli script
+# STEP 9: Verifica che la copia sia avvenuta correttamente
+if [ ! -d "$DEVOPS_CONFIG_DIR" ] || [ -z "$(ls -A "$DEVOPS_CONFIG_DIR" 2>/dev/null)" ]; then
+    print_error "Directory devops-pipeline-fase-1 vuota o non creata"
+    
+    # Ripristina backup se esiste
+    if [ -n "$BACKUP_DIR" ] && [ -d "$BACKUP_DIR" ]; then
+        print_warning "Ripristino backup..."
+        rm -rf "$DEVOPS_CONFIG_DIR" 2>/dev/null || true
+        mv "$BACKUP_DIR" "$DEVOPS_CONFIG_DIR"
+        print_success "Backup ripristinato"
+    fi
+    exit 1
+fi
+
+# STEP 10: Rendere eseguibili tutti gli script
 print_status $BLUE "Rendendo eseguibili gli script..."
 chmod +x "$HOME/devops-pipeline-fase-1"/*.sh
 
-# STEP 10: Verifica integrità dei file con dimensioni minime attese
+# STEP 11: Verifica integrità dei file con dimensioni minime attese
 print_status $BLUE "Verifica integrità files..."
 
 declare -A expected_sizes=(
@@ -298,7 +332,7 @@ for file in "${!expected_sizes[@]}"; do
     fi
 done
 
-# STEP 11: Se i file non sono OK, ripristina backup
+# STEP 12: Se i file non sono OK, ripristina backup
 if [ "$all_files_ok" = false ]; then
     print_error "Verifica integrità fallita!"
     if [ -n "$BACKUP_DIR" ] && [ -d "$BACKUP_DIR" ]; then
@@ -310,7 +344,7 @@ if [ "$all_files_ok" = false ]; then
     exit 1
 fi
 
-# STEP 12: Verifica contenuto specifico test.sh (non deve avere set -e)
+# STEP 13: Verifica contenuto specifico test.sh (non deve avere set -e)
 if grep -q "^set -e" "$HOME/devops-pipeline-fase-1/test.sh"; then
     print_error "test.sh contiene ancora 'set -e' - sync non aggiornato"
     if [ -n "$BACKUP_DIR" ] && [ -d "$BACKUP_DIR" ]; then
@@ -324,31 +358,29 @@ else
     print_success "✓ test.sh verificato - nessun 'set -e' trovato"
 fi
 
-# STEP 13: Verifica versione test.sh (deve essere v2.0+)
+# STEP 14: Verifica versione test.sh (deve essere v2.0+)
 if grep -q "v2.0\|v3.0" "$HOME/devops-pipeline-fase-1/test.sh"; then
-    # Fix: rimossa variabile local
     version=$(grep -o "v[0-9]\+\.[0-9]\+" "$HOME/devops-pipeline-fase-1/test.sh" | head -1)
     print_success "✓ test.sh versione $version verificata"
 else
     print_warning "test.sh potrebbe non essere la versione più recente"
 fi
 
-# STEP 14: Rimuovi backup se tutto OK
+# STEP 15: Rimuovi backup se tutto OK
 if [ -n "$BACKUP_DIR" ] && [ -d "$BACKUP_DIR" ]; then
     rm -rf "$BACKUP_DIR"
     print_success "Backup rimosso - sync completato con successo"
 fi
 
-# STEP 15: Creare symlink per facilità d'uso
-if [ ! -L "$HOME/devops-scripts" ]; then
-    ln -s "$HOME/devops-pipeline-fase-1" "$HOME/devops-scripts"
-    print_status $GREEN "Symlink creato: ~/devops-scripts -> ~/devops-pipeline-fase-1"
-fi
+# STEP 16: Ricrea/aggiorna symlink per facilità d'uso
+rm -f "$HOME/devops-scripts" 2>/dev/null || true
+ln -s "$HOME/devops-pipeline-fase-1" "$HOME/devops-scripts"
+print_status $GREEN "Symlink aggiornato: ~/devops-scripts -> ~/devops-pipeline-fase-1"
 
-# STEP 16: Output informazioni dettagliate
+# STEP 17: Output informazioni dettagliate
 echo -e "${GREEN}"
 echo "======================================="
-echo "   SINCRONIZZAZIONE COMPLETATA v3.1"
+echo "   SINCRONIZZAZIONE COMPLETATA v3.2"
 echo "======================================="
 echo -e "${NC}"
 echo "Directory progetto: $PROJECT_DIR"
@@ -361,7 +393,6 @@ echo ""
 echo "File sincronizzati:"
 for file in prerequisites.sh deploy.sh test.sh sync-devops-config.sh; do
     if [ -f "$HOME/devops-pipeline-fase-1/$file" ]; then
-        # Fix: rimossa variabile local
         size=$(wc -l < "$HOME/devops-pipeline-fase-1/$file")
         echo "  ✓ $file ($size righe)"
     fi
@@ -369,13 +400,13 @@ done
 
 echo ""
 echo "Prossimi passi:"
-echo "1. cd ~/devops-pipeline-fase-1"
+echo "1. cd ~/devops-pipeline-fase-1  # (usa il path diretto, non il symlink)"
 echo "2. ./prerequisites.sh"
 echo "3. ./deploy.sh"
 echo "4. ./test.sh"
 echo ""
 
-print_success "Sync v3.1 completato con successo!"
+print_success "Sync v3.2 completato con successo!"
 print_status $GREEN "Sistema pronto per operazioni DevOps"
 
 exit 0
