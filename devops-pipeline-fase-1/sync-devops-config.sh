@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# sync-devops-config.sh v3.2
+# sync-devops-config.sh v3.3
 # Script per sincronizzare la configurazione DevOps dalla repository GitHub
-# Fix gestione symlink e directory di lavoro
+# Fix: aggiunto cd esplicito alla fine per posizionare l'utente nella directory corretta
 
 set -e  # Exit on any error
 
@@ -190,12 +190,12 @@ verify_file_integrity() {
 # Banner
 echo -e "${BLUE}"
 echo "======================================="
-echo "   CRM System - DevOps Sync Script v3.2"
+echo "   CRM System - DevOps Sync Script v3.3"
 echo "   FASE 1: Validazione Base"
 echo "======================================="
 echo -e "${NC}"
 
-print_status $BLUE "Inizializzazione sync DevOps config v3.2..."
+print_status $BLUE "Inizializzazione sync DevOps config v3.3..."
 
 # STEP 0: Verifica e cambia directory di lavoro
 print_status $BLUE "Directory corrente: $(pwd)"
@@ -377,36 +377,42 @@ rm -f "$HOME/devops-scripts" 2>/dev/null || true
 ln -s "$HOME/devops-pipeline-fase-1" "$HOME/devops-scripts"
 print_status $GREEN "Symlink aggiornato: ~/devops-scripts -> ~/devops-pipeline-fase-1"
 
-# STEP 17: Output informazioni dettagliate
+# STEP 17: CAMBIO DIRECTORY ESPLICITO ALLA DIRECTORY SINCRONIZZATA
+print_status $BLUE "Cambio directory alla configurazione sincronizzata..."
+cd "$DEVOPS_CONFIG_DIR"
+print_success "Directory corrente: $(pwd)"
+
+# STEP 18: Output informazioni dettagliate
 echo -e "${GREEN}"
 echo "======================================="
-echo "   SINCRONIZZAZIONE COMPLETATA v3.2"
+echo "   SINCRONIZZAZIONE COMPLETATA v3.3"
 echo "======================================="
 echo -e "${NC}"
 echo "Directory progetto: $PROJECT_DIR"
 echo "Directory DevOps: $HOME/devops-pipeline-fase-1"
+echo "Directory corrente: $(pwd)"
 echo "Symlink: $HOME/devops-scripts"
 echo "Log file: $LOG_FILE"
 echo ""
 
-# Mostra dettagli file sincronizzati
-echo "File sincronizzati:"
+# Mostra dettagli file sincronizzati NELLA DIRECTORY CORRENTE
+echo "File sincronizzati (directory corrente):"
 for file in prerequisites.sh deploy.sh test.sh sync-devops-config.sh; do
-    if [ -f "$HOME/devops-pipeline-fase-1/$file" ]; then
-        size=$(wc -l < "$HOME/devops-pipeline-fase-1/$file")
+    if [ -f "$file" ]; then
+        size=$(wc -l < "$file")
         echo "  ✓ $file ($size righe)"
     fi
 done
 
 echo ""
-echo "Prossimi passi:"
-echo "1. cd ~/devops-pipeline-fase-1  # (usa il path diretto, non il symlink)"
-echo "2. ./prerequisites.sh"
-echo "3. ./deploy.sh"
-echo "4. ./test.sh"
+echo "Prossimi passi (sei già nella directory corretta):"
+echo "1. ./prerequisites.sh"
+echo "2. ./deploy.sh"
+echo "3. ./test.sh"
 echo ""
 
-print_success "Sync v3.2 completato con successo!"
+print_success "Sync v3.3 completato con successo!"
+print_status $GREEN "Sei ora posizionato nella directory DevOps sincronizzata"
 print_status $GREEN "Sistema pronto per operazioni DevOps"
 
 exit 0
