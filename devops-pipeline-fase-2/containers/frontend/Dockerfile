@@ -6,19 +6,11 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY frontend/package*.json ./
+# Copy all frontend files
+COPY frontend/ ./
 
 # Install dependencies
 RUN npm ci
-
-# Copy source code and configs
-COPY frontend/src ./src
-COPY frontend/public ./public
-COPY frontend/index.html ./
-COPY frontend/vite.config.ts ./
-COPY frontend/tsconfig.json ./
-COPY frontend/tsconfig.node.json ./
 
 # Build application
 RUN npm run build
