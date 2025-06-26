@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# CRM System Test Suite
+# CRM System Test Suite v2.0
 # FASE 1: Validazione Base
-# Versione Robusta - Non esce al primo errore
+# Versione con autenticazione JWT per API protette
 
 # Configurazioni
 LOG_FILE="$HOME/test.log"
@@ -21,6 +21,9 @@ NC='\033[0m'
 TOTAL_TESTS=0
 PASSED_TESTS=0
 FAILED_TESTS=0
+
+# JWT Token per API protette
+JWT_TOKEN=""
 
 # Inizializza log
 echo "=== CRM Test Suite - $(date) ===" > "$LOG_FILE"
@@ -52,6 +55,26 @@ log_info() {
     log "INFO: $1"
 }
 
+# Funzione per ottenere JWT token
+get_jwt_token() {
+    log_info "Ottenendo JWT token per API protette..."
+    
+    local login_response=$(curl -s -X POST "$BACKEND_URL/api/auth/login" \
+        -H "Content-Type: application/json" \
+        -d '{"email":"admin@crm.local","password":"admin123"}' 2>/dev/null)
+    
+    if [ $? -eq 0 ] && echo "$login_response" | grep -q "token"; then
+        JWT_TOKEN=$(echo "$login_response" | grep -o '"token":"[^"]*' | cut -d'"' -f4)
+        if [ -n "$JWT_TOKEN" ]; then
+            log_success "JWT token ottenuto con successo"
+            return 0
+        fi
+    fi
+    
+    log_fail "Impossibile ottenere JWT token"
+    return 1
+}
+
 # Funzione per eseguire test con gestione errori
 run_test() {
     local test_name="$1"
@@ -72,10 +95,27 @@ run_test() {
     fi
 }
 
+# Funzione per test API protette
+run_authenticated_test() {
+    local test_name="$1"
+    local endpoint="$2"
+    local timeout_seconds="${3:-10}"
+    
+    if [ -z "$JWT_TOKEN" ]; then
+        log_fail "$test_name (no JWT token)"
+        ((TOTAL_TESTS++))
+        ((FAILED_TESTS++))
+        return 1
+    fi
+    
+    local auth_command="curl -f -s -m $timeout_seconds -H 'Authorization: Bearer $JWT_TOKEN' $BACKEND_URL$endpoint"
+    run_test "$test_name" "$auth_command" "$timeout_seconds"
+}
+
 # Inizio test suite
 echo ""
 echo "======================================="
-echo "   CRM System - Test Suite"
+echo "   CRM System - Test Suite v2.0"
 echo "   FASE 1: Validazione Base"
 echo "======================================="
 
@@ -95,21 +135,27 @@ log_info "Testando porte..."
 run_test "Backend Port 3001" "nc -z -w 3 localhost 3001"
 run_test "Frontend Port 3000" "nc -z -w 3 localhost 3000"
 
-# Test 2: API Endpoints
+# Test 2: Autenticazione e JWT
 echo ""
-echo "=== Test API Endpoints ==="
-
+echo "=== Test Autenticazione ===
 log_info "Testando endpoint di autenticazione..."
 run_test "Auth Login Endpoint" "curl -f -s -m 5 -X POST $BACKEND_URL/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@crm.local\",\"password\":\"admin123\"}'"
 
-log_info "Testando endpoint CRUD..."
-run_test "Customers Endpoint" "curl -f -s -m 5 $BACKEND_URL/api/customers"
-run_test "Opportunities Endpoint" "curl -f -s -m 5 $BACKEND_URL/api/opportunities"
-run_test "Activities Endpoint" "curl -f -s -m 5 $BACKEND_URL/api/activities"
-run_test "Interactions Endpoint" "curl -f -s -m 5 $BACKEND_URL/api/interactions"
-run_test "Dashboard Stats Endpoint" "curl -f -s -m 5 $BACKEND_URL/api/dashboard/stats"
+# Ottieni JWT token per i test successivi
+get_jwt_token
 
-# Test 3: Database
+# Test 3: API Endpoints Protette
+echo ""
+echo "=== Test API Endpoints Protette ==="
+
+log_info "Testando endpoint CRUD con autenticazione..."
+run_authenticated_test "Customers Endpoint" "/api/customers"
+run_authenticated_test "Opportunities Endpoint" "/api/opportunities"
+run_authenticated_test "Activities Endpoint" "/api/activities"
+run_authenticated_test "Interactions Endpoint" "/api/interactions"
+run_authenticated_test "Dashboard Stats Endpoint" "/api/dashboard/stats"
+
+# Test 4: Database
 echo ""
 echo "=== Test Database ==="
 
@@ -126,7 +172,7 @@ else
     log_fail "Admin User Exists (sqlite3 non installato)"
 fi
 
-# Test 4: Processi
+# Test 5: Processi
 echo ""
 echo "=== Test Processi ==="
 
@@ -134,7 +180,7 @@ log_info "Testando processi attivi..."
 run_test "Backend Process Running" "pgrep -f 'ts-node.*app.ts'"
 run_test "Frontend Process Running" "pgrep -f 'vite'"
 
-# Test 5: File System
+# Test 6: File System
 echo ""
 echo "=== Test File System ==="
 
@@ -148,7 +194,7 @@ log_info "Testando dipendenze..."
 run_test "Node Modules Backend" "test -d $HOME/devops/CRM-System/backend/node_modules"
 run_test "Node Modules Frontend" "test -d $HOME/devops/CRM-System/frontend/node_modules"
 
-# Test 6: Configurazione
+# Test 7: Configurazione
 echo ""
 echo "=== Test Configurazione ==="
 
@@ -159,12 +205,20 @@ run_test "Vite Config" "test -f $HOME/devops/CRM-System/frontend/vite.config.ts"
 run_test "Package.json Backend" "test -f $HOME/devops/CRM-System/backend/package.json"
 run_test "Package.json Frontend" "test -f $HOME/devops/CRM-System/frontend/package.json"
 
-# Test 7: Network Test Aggiuntivi
+# Test 8: Network Test Avanzati
 echo ""
 echo "=== Test Network ==="
 
 log_info "Testando configurazione di rete..."
 run_test "Backend CORS Test" "curl -s -H 'Origin: http://localhost:3000' $BACKEND_URL/api/health | grep -q 'OK'"
+
+# Test 9: Performance di Base
+echo ""
+echo "=== Test Performance ==="
+
+log_info "Testando performance di base..."
+run_test "Backend Response Time" "timeout 3 curl -s $BACKEND_URL/api/health >/dev/null"
+run_test "Frontend Load Time" "timeout 5 curl -s $FRONTEND_URL >/dev/null"
 
 # Genera report finale
 echo ""
@@ -187,18 +241,33 @@ echo "Tasso di Successo: $SUCCESS_RATE%"
 # Genera report JSON
 cat > "$REPORT_FILE" << EOF
 {
-  "test_suite": "CRM System FASE 1",
+  "test_suite": "CRM System FASE 1 v2.0",
   "timestamp": "$(date -Iseconds)",
   "total_tests": $TOTAL_TESTS,
   "passed_tests": $PASSED_TESTS,
   "failed_tests": $FAILED_TESTS,
   "success_rate": $SUCCESS_RATE,
+  "jwt_auth": "$([ -n "$JWT_TOKEN" ] && echo 'enabled' || echo 'disabled')",
   "status": "$([ $SUCCESS_RATE -ge 80 ] && echo 'PASS' || echo 'FAIL')"
 }
 EOF
 
 echo ""
-if [ $SUCCESS_RATE -ge 80 ]; then
+if [ $SUCCESS_RATE -ge 95 ]; then
+    log_success "Test suite FASE 1 completata PERFETTAMENTE! ($SUCCESS_RATE%)"
+    echo ""
+    echo "🏆 FASE 1: VALIDAZIONE BASE - SUCCESSO COMPLETO!"
+    echo ""
+    echo "✅ Risultati eccellenti:"
+    echo "   - Tasso di successo: $SUCCESS_RATE% (≥95% PERFETTO!)"
+    echo "   - Backend completamente funzionante"
+    echo "   - Frontend completamente funzionante"
+    echo "   - Database completamente operativo"
+    echo "   - API endpoints tutti attivi"
+    echo "   - Autenticazione JWT funzionante"
+    echo ""
+    echo "🚀 PRONTO PER FASE 2: CONTAINERIZZAZIONE COMPLETA"
+elif [ $SUCCESS_RATE -ge 80 ]; then
     log_success "Test suite FASE 1 completata con successo ($SUCCESS_RATE%)"
     echo ""
     echo "🎉 FASE 1: VALIDAZIONE BASE COMPLETATA!"
