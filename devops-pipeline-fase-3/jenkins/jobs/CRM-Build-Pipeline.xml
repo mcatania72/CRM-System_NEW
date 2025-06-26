@@ -1,0 +1,104 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<!-- Jenkins Job Configuration per CRM Build Pipeline -->
+<!-- FASE 3: CI/CD Base con Jenkins -->
+
+<flow-definition plugin="workflow-job@latest">
+  <actions/>
+  <description>Pipeline automatica per build, test e deploy del CRM System
+  
+Questa pipeline esegue:
+1. Checkout del codice da GitHub
+2. Build backend e frontend
+3. Test FASE 1 e FASE 2
+4. Build immagini Docker
+5. Deploy in ambiente development
+6. Test post-deploy
+
+Configurato per FASE 3: CI/CD Base con Jenkins</description>
+  
+  <keepDependencies>false</keepDependencies>
+  
+  <properties>
+    <org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+      <triggers>
+        <!-- GitHub webhook trigger -->
+        <com.cloudbees.jenkins.GitHubPushTrigger plugin="github@latest">
+          <spec></spec>
+        </com.cloudbees.jenkins.GitHubPushTrigger>
+        
+        <!-- Polling SCM come fallback -->
+        <hudson.triggers.SCMTrigger>
+          <spec>H/5 * * * *</spec>
+          <ignorePostCommitHooks>false</ignorePostCommitHooks>
+        </hudson.triggers.SCMTrigger>
+      </triggers>
+    </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+    
+    <!-- GitHub project property -->
+    <com.coravy.hudson.plugins.github.GithubProjectProperty plugin="github@latest">
+      <projectUrl>https://github.com/mcatania72/CRM-System/</projectUrl>
+      <displayName></displayName>
+    </com.coravy.hudson.plugins.github.GithubProjectProperty>
+    
+    <!-- Build discarder -->
+    <jenkins.model.BuildDiscarderProperty>
+      <strategy class="hudson.tasks.LogRotator">
+        <daysToKeep>30</daysToKeep>
+        <numToKeep>20</numToKeep>
+        <artifactDaysToKeep>-1</artifactDaysToKeep>
+        <artifactNumToKeep>-1</artifactNumToKeep>
+      </strategy>
+    </jenkins.model.BuildDiscarderProperty>
+  </properties>
+  
+  <!-- Pipeline definition -->
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps@latest">
+    <!-- Source Code Management -->
+    <scm class="hudson.plugins.git.GitSCM" plugin="git@latest">
+      <configVersion>2</configVersion>
+      
+      <userRemoteConfigs>
+        <hudson.plugins.git.UserRemoteConfig>
+          <url>https://github.com/mcatania72/CRM-System.git</url>
+          <credentialsId>github-token</credentialsId>
+        </hudson.plugins.git.UserRemoteConfig>
+      </userRemoteConfigs>
+      
+      <branches>
+        <hudson.plugins.git.BranchSpec>
+          <name>*/main</name>
+        </hudson.plugins.git.BranchSpec>
+      </branches>
+      
+      <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+      
+      <submoduleCfg class="list"/>
+      
+      <extensions>
+        <!-- Cleanup before checkout -->
+        <hudson.plugins.git.extensions.impl.CleanBeforeCheckout/>
+        
+        <!-- Shallow clone for faster checkout -->
+        <hudson.plugins.git.extensions.impl.CloneOption>
+          <shallow>true</shallow>
+          <noTags>false</noTags>
+          <reference></reference>
+          <depth>1</depth>
+          <honorRefspec>false</honorRefspec>
+        </hudson.plugins.git.extensions.impl.CloneOption>
+      </extensions>
+    </scm>
+    
+    <!-- Path to Jenkinsfile -->
+    <scriptPath>devops-pipeline-fase-3/jenkins/Jenkinsfile.crm-build</scriptPath>
+    
+    <!-- Lightweight checkout -->
+    <lightweight>true</lightweight>
+  </definition>
+  
+  <!-- Pipeline triggers -->
+  <triggers/>
+  
+  <!-- Disabled flag -->
+  <disabled>false</disabled>
+</flow-definition>

@@ -1,0 +1,86 @@
+# Jenkins Plugins essenziali per FASE 3: CI/CD Base
+# Questo file definisce i plugin necessari per il CRM System
+
+# Core Plugins
+git:latest
+github:latest
+github-api:latest
+github-branch-source:latest
+
+# Pipeline Plugins
+workflow-aggregator:latest
+workflow-job:latest
+workflow-cps:latest
+workflow-durable-task-step:latest
+workflow-scm-step:latest
+workflow-support:latest
+pipeline-stage-view:latest
+pipeline-rest-api:latest
+
+# Docker Integration
+docker-workflow:latest
+docker-plugin:latest
+docker-commons:latest
+
+# Build Tools
+build-timeout:latest
+timestamper:latest
+ws-cleanup:latest
+ant:latest
+gradle:latest
+
+# SCM Plugins
+scm-api:latest
+git-client:latest
+
+# Authentication & Security
+matrix-auth:latest
+pam-auth:latest
+ldap:latest
+
+# Notification Plugins
+email-ext:latest
+slack:latest
+
+# UI Enhancements
+blueocean:latest
+blueocean-pipeline-api-impl:latest
+blueocean-pipeline-editor:latest
+blueocean-git-pipeline:latest
+blueocean-github-pipeline:latest
+blueocean-display-url:latest
+
+# Build Environment
+build-name-setter:latest
+build-user-vars-plugin:latest
+envinject:latest
+
+# Testing & Quality
+junit:latest
+cobertura:latest
+sonar:latest
+
+# Utility Plugins
+config-file-provider:latest
+credentials:latest
+credentials-binding:latest
+plain-credentials:latest
+ssh-credentials:latest
+ssh-agent:latest
+
+# Pipeline Utility
+pipeline-utility-steps:latest
+pipeline-milestone-step:latest
+lock-and-latches:latest
+
+# Multi-branch
+branch-api:latest
+cloudbees-folder:latest
+
+# Monitoring
+monitoring:latest
+javadoc:latest
+
+# Additional Build Tools
+maven-plugin:latest
+nodejs:latest

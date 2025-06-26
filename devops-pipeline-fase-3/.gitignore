@@ -1,0 +1,44 @@
+# FASE 3: CI/CD Base con Jenkins - .gitignore
+
+# Log files
+*.log
+
+# Report files
+*-report.json
+*-report.xml
+
+# Jenkins backup files
+jenkins-backup-*.tar.gz
+
+# Jenkins initial password
+jenkins-initial-password.txt
+
+# Temporary files
+*.tmp
+*.temp
+
+# Backup directories
+*_backup_*
+
+# Jenkins workspace (if any)
+workspace/
+builds/
+
+# Cache directories
+.cache/
+.npm/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node.js (if any local)
+node_modules/
+npm-debug.log*

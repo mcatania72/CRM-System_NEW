@@ -1,0 +1,134 @@
+version: '3.8'
+
+# Docker Compose per Jenkins containerizzato (opzionale)
+# FASE 3: CI/CD Base con Jenkins
+
+networks:
+  jenkins-network:
+    driver: bridge
+
+volumes:
+  jenkins-data:
+    driver: local
+  jenkins-docker-certs:
+    driver: local
+
+services:
+  # Jenkins Controller
+  jenkins:
+    image: jenkins/jenkins:lts-jdk17
+    container_name: jenkins-controller
+    restart: unless-stopped
+    
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    
+    environment:
+      - JENKINS_OPTS=--httpPort=8080
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false -Xmx2g -Xms1g
+    
+    volumes:
+      - jenkins-data:/var/jenkins_home
+      - jenkins-docker-certs:/certs/client:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    
+    networks:
+      - jenkins-network
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    
+    # Configurazioni security
+    user: "root"  # Necessario per accesso Docker socket
+    
+    # Labels per identificazione
+    labels:
+      - "com.crm.service=jenkins"
+      - "com.crm.environment=development"
+      - "com.crm.fase=3"
+  
+  # Docker-in-Docker per build (opzionale)
+  docker-dind:
+    image: docker:dind
+    container_name: jenkins-docker
+    restart: unless-stopped
+    
+    privileged: true
+    
+    environment:
+      - DOCKER_TLS_CERTDIR=/certs
+    
+    volumes:
+      - jenkins-docker-certs:/certs/client
+      - jenkins-data:/var/jenkins_home
+    
+    networks:
+      - jenkins-network
+    
+    command: --storage-driver overlay2
+    
+    # Expose Docker daemon port
+    ports:
+      - "2376:2376"
+    
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+    labels:
+      - "com.crm.service=docker-dind"
+      - "com.crm.environment=development"
+      - "com.crm.fase=3"
+
+  # Jenkins Agent (opzionale per pipeline distributed)
+  jenkins-agent:
+    image: jenkins/ssh-agent:jdk17
+    container_name: jenkins-agent
+    restart: unless-stopped
+    
+    environment:
+      - JENKINS_AGENT_SSH_PUBKEY=${JENKINS_AGENT_SSH_PUBKEY}
+    
+    volumes:
+      - jenkins-docker-certs:/certs/client:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    
+    networks:
+      - jenkins-network
+    
+    labels:
+      - "com.crm.service=jenkins-agent"
+      - "com.crm.environment=development"
+      - "com.crm.fase=3"
+
+  # Nginx reverse proxy per Jenkins (opzionale)
+  nginx-jenkins:
+    image: nginx:alpine
+    container_name: jenkins-nginx
+    restart: unless-stopped
+    
+    ports:
+      - "80:80"
+      - "443:443"
+    
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    
+    networks:
+      - jenkins-network
+    
+    depends_on:
+      - jenkins
+    
+    labels:
+      - "com.crm.service=nginx-proxy"
+      - "com.crm.environment=development"
+      - "com.crm.fase=3"
