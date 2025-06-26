@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# sync-devops-config.sh v2.0
+# sync-devops-config.sh v3.0
 # Script per sincronizzare la configurazione DevOps dalla repository GitHub
-# Versione migliorata con verifica e rollback
+# Versione ultra-robusta con gestione processi attivi e cleanup completo
 
 set -e  # Exit on any error
 
@@ -47,26 +47,108 @@ print_warning() {
     log "WARNING: $1"
 }
 
-# Banner
-echo -e "${BLUE}"
-echo "======================================="
-echo "   CRM System - DevOps Sync Script v2.0"
-echo "   FASE 1: Validazione Base"
-echo "======================================="
-echo -e "${NC}"
+# Funzione per fermare tutti i processi CRM
+stop_crm_processes() {
+    print_status $YELLOW "Fermando processi CRM per sync sicuro..."
+    
+    # Ferma processi Node.js relativi al CRM
+    local backend_pids=$(pgrep -f "ts-node.*app.ts" 2>/dev/null || true)
+    local frontend_pids=$(pgrep -f "vite" 2>/dev/null || true)
+    local node_pids=$(pgrep -f "node.*CRM-System" 2>/dev/null || true)
+    
+    # Ferma backend
+    if [ -n "$backend_pids" ]; then
+        print_status $YELLOW "Fermando processi backend: $backend_pids"
+        echo "$backend_pids" | xargs -r kill -TERM 2>/dev/null || true
+        sleep 2
+        echo "$backend_pids" | xargs -r kill -KILL 2>/dev/null || true
+    fi
+    
+    # Ferma frontend
+    if [ -n "$frontend_pids" ]; then
+        print_status $YELLOW "Fermando processi frontend: $frontend_pids"
+        echo "$frontend_pids" | xargs -r kill -TERM 2>/dev/null || true
+        sleep 2
+        echo "$frontend_pids" | xargs -r kill -KILL 2>/dev/null || true
+    fi
+    
+    # Ferma altri processi Node correlati
+    if [ -n "$node_pids" ]; then
+        print_status $YELLOW "Fermando processi Node CRM: $node_pids"
+        echo "$node_pids" | xargs -r kill -TERM 2>/dev/null || true
+        sleep 2
+        echo "$node_pids" | xargs -r kill -KILL 2>/dev/null || true
+    fi
+    
+    # Libera porte specifiche
+    local port_3000_pid=$(lsof -ti:3000 2>/dev/null || true)
+    local port_3001_pid=$(lsof -ti:3001 2>/dev/null || true)
+    
+    if [ -n "$port_3000_pid" ]; then
+        print_status $YELLOW "Liberando porta 3000 (PID: $port_3000_pid)"
+        echo "$port_3000_pid" | xargs -r kill -KILL 2>/dev/null || true
+    fi
+    
+    if [ -n "$port_3001_pid" ]; then
+        print_status $YELLOW "Liberando porta 3001 (PID: $port_3001_pid)"
+        echo "$port_3001_pid" | xargs -r kill -KILL 2>/dev/null || true
+    fi
+    
+    # Attendi che i processi si fermino
+    sleep 3
+    
+    print_success "Processi CRM fermati"
+}
 
-print_status $BLUE "Inizializzazione sync DevOps config..."
-
-# Verifica prerequisiti
-if ! command -v git &> /dev/null; then
-    print_error "Git non è installato. Installare git prima di continuare."
-    exit 1
-fi
-
-if ! command -v curl &> /dev/null; then
-    print_error "Curl non è installato. Installare curl prima di continuare."
-    exit 1
-fi
+# Funzione per rimozione sicura directory
+safe_remove_directory() {
+    local dir_path="$1"
+    local max_attempts=3
+    local attempt=1
+    
+    if [ ! -d "$dir_path" ]; then
+        return 0
+    fi
+    
+    print_status $YELLOW "Rimozione sicura directory: $dir_path"
+    
+    while [ $attempt -le $max_attempts ]; do
+        print_status $BLUE "Tentativo $attempt/$max_attempts di rimozione..."
+        
+        # Prova rimozione normale
+        if rm -rf "$dir_path" 2>/dev/null; then
+            print_success "Directory rimossa con successo"
+            return 0
+        fi
+        
+        # Se fallisce, prova con sudo
+        if sudo rm -rf "$dir_path" 2>/dev/null; then
+            print_success "Directory rimossa con sudo"
+            return 0
+        fi
+        
+        # Se ancora fallisce, prova a cambiare permessi e rimuovere
+        if [ -d "$dir_path" ]; then
+            print_warning "Tentativo con cambio permessi..."
+            sudo chmod -R 777 "$dir_path" 2>/dev/null || true
+            sudo chown -R $USER:$USER "$dir_path" 2>/dev/null || true
+            
+            if rm -rf "$dir_path" 2>/dev/null; then
+                print_success "Directory rimossa dopo cambio permessi"
+                return 0
+            fi
+        fi
+        
+        ((attempt++))
+        if [ $attempt -le $max_attempts ]; then
+            print_warning "Tentativo fallito, attendo prima del prossimo..."
+            sleep 2
+        fi
+    done
+    
+    print_error "Impossibile rimuovere directory dopo $max_attempts tentative: $dir_path"
+    return 1
+}
 
 # Funzione per verificare integrità file
 verify_file_integrity() {
@@ -89,7 +171,31 @@ verify_file_integrity() {
     return 0
 }
 
-# Backup della configurazione esistente se presente
+# Banner
+echo -e "${BLUE}"
+echo "======================================="
+echo "   CRM System - DevOps Sync Script v3.0"
+echo "   FASE 1: Validazione Base"
+echo "======================================="
+echo -e "${NC}"
+
+print_status $BLUE "Inizializzazione sync DevOps config v3.0..."
+
+# Verifica prerequisiti
+if ! command -v git &> /dev/null; then
+    print_error "Git non è installato. Installare git prima di continuare."
+    exit 1
+fi
+
+if ! command -v curl &> /dev/null; then
+    print_error "Curl non è installato. Installare curl prima di continuare."
+    exit 1
+fi
+
+# STEP 1: Ferma tutti i processi CRM
+stop_crm_processes
+
+# STEP 2: Backup della configurazione esistente se presente
 BACKUP_DIR=""
 if [ -d "$DEVOPS_CONFIG_DIR" ]; then
     print_warning "Directory devops-pipeline-fase-1 esistente. Creando backup..."
@@ -98,43 +204,70 @@ if [ -d "$DEVOPS_CONFIG_DIR" ]; then
     print_status $YELLOW "Backup creato in: $BACKUP_DIR"
 fi
 
-# Creare la directory devops se non esiste
+# STEP 3: Crea directory devops se non esiste
 mkdir -p "$HOME/devops"
 
-# Rimuovere directory progetto esistente se presente
+# STEP 4: Rimozione sicura directory progetto esistente
 if [ -d "$PROJECT_DIR" ]; then
     print_status $YELLOW "Rimozione directory progetto esistente..."
-    rm -rf "$PROJECT_DIR"
+    if ! safe_remove_directory "$PROJECT_DIR"; then
+        print_error "Impossibile rimuovere directory progetto"
+        
+        # Ripristina backup se esiste
+        if [ -n "$BACKUP_DIR" ] && [ -d "$BACKUP_DIR" ]; then
+            print_warning "Ripristino backup..."
+            rm -rf "$DEVOPS_CONFIG_DIR" 2>/dev/null || true
+            mv "$BACKUP_DIR" "$DEVOPS_CONFIG_DIR"
+            print_success "Backup ripristinato"
+        fi
+        exit 1
+    fi
 fi
 
-# Clone fresh del repository
+# STEP 5: Clone fresh del repository
 print_status $BLUE "Clone del repository CRM-System..."
 if git clone "$REPO_URL" "$PROJECT_DIR"; then
     print_success "Repository clonato con successo"
 else
     print_error "Errore durante il clone del repository"
+    
+    # Ripristina backup se esiste
+    if [ -n "$BACKUP_DIR" ] && [ -d "$BACKUP_DIR" ]; then
+        print_warning "Ripristino backup..."
+        rm -rf "$DEVOPS_CONFIG_DIR" 2>/dev/null || true
+        mv "$BACKUP_DIR" "$DEVOPS_CONFIG_DIR"
+        print_success "Backup ripristinato"
+    fi
     exit 1
 fi
 
-# Verifica che la directory devops-pipeline-fase-1 esista nel repo
+# STEP 6: Verifica che la directory devops-pipeline-fase-1 esista nel repo
 if [ ! -d "$PROJECT_DIR/devops-pipeline-fase-1" ]; then
     print_error "Directory devops-pipeline-fase-1 non trovata nel repository"
+    
+    # Ripristina backup se esiste
+    if [ -n "$BACKUP_DIR" ] && [ -d "$BACKUP_DIR" ]; then
+        print_warning "Ripristino backup..."
+        rm -rf "$DEVOPS_CONFIG_DIR" 2>/dev/null || true
+        mv "$BACKUP_DIR" "$DEVOPS_CONFIG_DIR"
+        print_success "Backup ripristinato"
+    fi
     exit 1
 fi
 
-# Rimuovi directory locale esistente
+# STEP 7: Rimuovi directory locale esistente
 if [ -d "$DEVOPS_CONFIG_DIR" ]; then
-    rm -rf "$DEVOPS_CONFIG_DIR"
+    safe_remove_directory "$DEVOPS_CONFIG_DIR"
 fi
 
-# Copiare la directory devops-pipeline-fase-1 nella home
+# STEP 8: Copiare la directory devops-pipeline-fase-1 nella home
 print_status $BLUE "Copia configurazione DevOps..."
 cp -r "$PROJECT_DIR/devops-pipeline-fase-1" "$HOME/"
 
-# Rendere eseguibili tutti gli script
+# STEP 9: Rendere eseguibili tutti gli script
 chmod +x "$HOME/devops-pipeline-fase-1"/*.sh
 
-# Verifica integrità dei file con dimensioni minime attese
+# STEP 10: Verifica integrità dei file con dimensioni minime attese
 print_status $BLUE "Verifica integrità files..."
 
 declare -A expected_sizes=(
@@ -152,24 +285,24 @@ for file in "${!expected_sizes[@]}"; do
     fi
 done
 
-# Se i file non sono OK, ripristina backup
+# STEP 11: Se i file non sono OK, ripristina backup
 if [ "$all_files_ok" = false ]; then
     print_error "Verifica integrità fallita!"
     if [ -n "$BACKUP_DIR" ] && [ -d "$BACKUP_DIR" ]; then
         print_warning "Ripristino backup..."
-        rm -rf "$DEVOPS_CONFIG_DIR"
+        safe_remove_directory "$DEVOPS_CONFIG_DIR"
         mv "$BACKUP_DIR" "$DEVOPS_CONFIG_DIR"
         print_success "Backup ripristinato"
     fi
     exit 1
 fi
 
-# Verifica contenuto specifico test.sh (non deve avere set -e)
+# STEP 12: Verifica contenuto specifico test.sh (non deve avere set -e)
 if grep -q "^set -e" "$HOME/devops-pipeline-fase-1/test.sh"; then
     print_error "test.sh contiene ancora 'set -e' - sync non aggiornato"
     if [ -n "$BACKUP_DIR" ] && [ -d "$BACKUP_DIR" ]; then
         print_warning "Ripristino backup..."
-        rm -rf "$DEVOPS_CONFIG_DIR"
+        safe_remove_directory "$DEVOPS_CONFIG_DIR"
         mv "$BACKUP_DIR" "$DEVOPS_CONFIG_DIR"
         print_success "Backup ripristinato"
     fi
@@ -178,22 +311,30 @@ else
     print_success "✓ test.sh verificato - nessun 'set -e' trovato"
 fi
 
-# Rimuovi backup se tutto OK
+# STEP 13: Verifica versione test.sh (deve essere v2.0+)
+if grep -q "v2.0\|v3.0" "$HOME/devops-pipeline-fase-1/test.sh"; then
+    local version=$(grep -o "v[0-9]\+\.[0-9]\+" "$HOME/devops-pipeline-fase-1/test.sh" | head -1)
+    print_success "✓ test.sh versione $version verificata"
+else
+    print_warning "test.sh potrebbe non essere la versione più recente"
+fi
+
+# STEP 14: Rimuovi backup se tutto OK
 if [ -n "$BACKUP_DIR" ] && [ -d "$BACKUP_DIR" ]; then
     rm -rf "$BACKUP_DIR"
     print_success "Backup rimosso - sync completato con successo"
 fi
 
-# Creare symlink per facilità d'uso
+# STEP 15: Creare symlink per facilità d'uso
 if [ ! -L "$HOME/devops-scripts" ]; then
     ln -s "$HOME/devops-pipeline-fase-1" "$HOME/devops-scripts"
     print_status $GREEN "Symlink creato: ~/devops-scripts -> ~/devops-pipeline-fase-1"
 fi
 
-# Output informazioni dettagliate
+# STEP 16: Output informazioni dettagliate
 echo -e "${GREEN}"
 echo "======================================="
-echo "   SINCRONIZZAZIONE COMPLETATA"
+echo "   SINCRONIZZAZIONE COMPLETATA v3.0"
 echo "======================================="
 echo -e "${NC}"
 echo "Directory progetto: $PROJECT_DIR"
@@ -218,6 +359,8 @@ echo "2. ./prerequisites.sh"
 echo "3. ./deploy.sh"
 echo "4. ./test.sh"
 echo ""
-print_success "Sync completato con successo!"
+
+print_success "Sync v3.0 completato con successo!"
+print_status $GREEN "Sistema pronto per operazioni DevOps"
 
 exit 0
