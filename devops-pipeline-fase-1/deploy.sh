@@ -19,6 +19,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Funzioni di logging
@@ -44,6 +45,75 @@ log_warning() {
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
     log "INFO: $1"
+}
+
+# Funzione per rilevare modalità backend
+detect_backend_mode() {
+    local pid=$1
+    
+    # Controlla se è ts-node (sviluppo)
+    if ps -p "$pid" -o cmd --no-headers | grep -q "ts-node"; then
+        echo "SVILUPPO (ts-node)"
+        return 0
+    fi
+    
+    # Controlla se è npm run dev
+    if ps -p "$pid" -o cmd --no-headers | grep -q "npm.*dev"; then
+        echo "SVILUPPO (npm dev)"
+        return 0
+    fi
+    
+    # Controlla nel log per capire come è stato avviato
+    if tail -50 "$BACKEND_LOG" 2>/dev/null | grep -q "> crm-backend.*dev"; then
+        echo "SVILUPPO (npm run dev)"
+        return 0
+    elif tail -50 "$BACKEND_LOG" 2>/dev/null | grep -q "> crm-backend.*start"; then
+        echo "PRODUZIONE (npm start)"
+        return 0
+    fi
+    
+    # Controlla se è node con file .js (produzione)
+    if ps -p "$pid" -o cmd --no-headers | grep -q "node.*dist\|node.*\.js"; then
+        echo "PRODUZIONE (node)"
+        return 0
+    fi
+    
+    # Default
+    echo "SCONOSCIUTO"
+}
+
+# Funzione per rilevare modalità frontend
+detect_frontend_mode() {
+    local pid=$1
+    
+    # Controlla se è vite dev
+    if ps -p "$pid" -o cmd --no-headers | grep -q "vite.*dev\|node.*vite[^/]*$"; then
+        echo "SVILUPPO (vite dev)"
+        return 0
+    fi
+    
+    # Controlla nel log
+    if tail -50 "$FRONTEND_LOG" 2>/dev/null | grep -q "> crm-frontend.*dev"; then
+        echo "SVILUPPO (npm run dev)"
+        return 0
+    elif tail -50 "$FRONTEND_LOG" 2>/dev/null | grep -q "> crm-frontend.*preview"; then
+        echo "PRODUZIONE (npm run preview)"
+        return 0
+    fi
+    
+    # Controlla se è vite preview
+    if ps -p "$pid" -o cmd --no-headers | grep -q "vite.*preview"; then
+        echo "PRODUZIONE (vite preview)"
+        return 0
+    fi
+    
+    # Default per vite generico
+    if ps -p "$pid" -o cmd --no-headers | grep -q "vite"; then
+        echo "SVILUPPO (vite)"
+        return 0
+    fi
+    
+    echo "SCONOSCIUTO"
 }
 
 # Funzione per verificare se un processo è in esecuzione
@@ -113,7 +183,10 @@ show_status() {
     # Status Backend
     if is_process_running "$BACKEND_PID_FILE"; then
         local backend_pid=$(cat "$BACKEND_PID_FILE")
+        local backend_mode=$(detect_backend_mode "$backend_pid")
+        
         log_success "Backend in esecuzione (PID: $backend_pid)"
+        echo -e "${CYAN}  → Modalità: $backend_mode${NC}"
         
         # Test health check
         if curl -s http://localhost:3001/api/health >/dev/null 2>&1; then
@@ -125,10 +198,15 @@ show_status() {
         log_error "Backend non in esecuzione"
     fi
     
+    echo ""
+    
     # Status Frontend
     if is_process_running "$FRONTEND_PID_FILE"; then
         local frontend_pid=$(cat "$FRONTEND_PID_FILE")
+        local frontend_mode=$(detect_frontend_mode "$frontend_pid")
+        
         log_success "Frontend in esecuzione (PID: $frontend_pid)"
+        echo -e "${CYAN}  → Modalità: $frontend_mode${NC}"
         
         # Test frontend
         if curl -s http://localhost:3000 >/dev/null 2>&1; then
@@ -154,6 +232,13 @@ show_status() {
     else
         echo "  - Porta 3000: LIBERA"
     fi
+    
+    # Informazioni utili
+    echo ""
+    log_info "Accesso applicazione:"
+    echo "  - Frontend: http://localhost:3000"
+    echo "  - Backend API: http://localhost:3001/api"
+    echo "  - Health Check: http://localhost:3001/api/health"
     
     echo ""
     log_info "Log files:"
@@ -203,10 +288,12 @@ start_backend() {
     log_info "Build backend..."
     if npm run build > "$BACKEND_LOG" 2>&1; then
         log_success "Build backend completata"
+        log_info "Avvio backend in modalità PRODUZIONE..."
         # Avvia da build
         nohup npm start > "$BACKEND_LOG" 2>&1 &
     else
-        log_warning "Build backend fallita, provo in modalità development"
+        log_warning "Build backend fallita, provo in modalità SVILUPPO..."
+        log_info "Avvio backend in modalità SVILUPPO (ts-node)..."
         # Avvia in dev mode
         nohup npm run dev > "$BACKEND_LOG" 2>&1 &
     fi
@@ -217,7 +304,8 @@ start_backend() {
     # Verifica avvio
     sleep 5
     if is_process_running "$BACKEND_PID_FILE"; then
-        log_success "Backend avviato (PID: $backend_pid)"
+        local backend_mode=$(detect_backend_mode "$backend_pid")
+        log_success "Backend avviato (PID: $backend_pid) - $backend_mode"
         
         # Test health check con retry
         local retries=0
@@ -254,9 +342,19 @@ start_frontend() {
         npm install
     fi
     
-    # FORZA DEV MODE per assicurare proxy funzionante
-    log_info "Avvio frontend in modalità development (con proxy)..."
-    nohup npm run dev > "$FRONTEND_LOG" 2>&1 &
+    # Prova build
+    log_info "Build frontend..."
+    if npm run build > "$FRONTEND_LOG" 2>&1; then
+        log_success "Build frontend completata"
+        log_info "Avvio frontend in modalità PRODUZIONE..."
+        # Avvia preview
+        nohup npm run preview > "$FRONTEND_LOG" 2>&1 &
+    else
+        log_warning "Build frontend fallita, provo in modalità SVILUPPO..."
+        log_info "Avvio frontend in modalità SVILUPPO (vite dev)..."
+        # Avvia in dev mode
+        nohup npm run dev > "$FRONTEND_LOG" 2>&1 &
+    fi
     
     local frontend_pid=$!
     echo $frontend_pid > "$FRONTEND_PID_FILE"
@@ -264,7 +362,8 @@ start_frontend() {
     # Verifica avvio
     sleep 5
     if is_process_running "$FRONTEND_PID_FILE"; then
-        log_success "Frontend avviato (PID: $frontend_pid)"
+        local frontend_mode=$(detect_frontend_mode "$frontend_pid")
+        log_success "Frontend avviato (PID: $frontend_pid) - $frontend_mode"
         
         # Test frontend con retry
         local retries=0
@@ -316,13 +415,12 @@ start_application() {
             echo "  Frontend: http://localhost:3000"
             echo "  Backend API: http://localhost:3001/api"
             echo ""
-            echo "Accesso esterno (dalla tua VM host):"
-            echo "  Frontend: http://192.168.1.29:3000"
-            echo "  Backend API: http://192.168.1.29:3001/api"
-            echo ""
             echo "Credenziali di accesso:"
             echo "  Email: admin@crm.local"
             echo "  Password: admin123"
+            echo ""
+            echo "Per verificare lo status e le modalità operative:"
+            echo "  ./deploy.sh status"
             echo ""
         else
             log_error "Errore nell'avvio del frontend"
@@ -357,7 +455,7 @@ case "${1:-start}" in
         echo "  start   - Avvia l'applicazione CRM"
         echo "  stop    - Ferma l'applicazione CRM" 
         echo "  restart - Riavvia l'applicazione CRM"
-        echo "  status  - Mostra lo status dell'applicazione (SENZA fermarla)"
+        echo "  status  - Mostra status completo con modalità operative"
         echo ""
         exit 1
         ;;
