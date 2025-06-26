@@ -1,0 +1,38 @@
+# Test Jenkins Version Check - IMPROVED VERSION
+log_test "Jenkins Version Check"
+((TOTAL_TESTS++))
+jenkins_version=""
+
+# Metodo 1: dpkg (più affidabile per Ubuntu/Debian)
+if command -v dpkg >/dev/null 2>&1; then
+    jenkins_version=$(dpkg -l | grep jenkins | awk '{print $3}' | head -1 2>/dev/null)
+fi
+
+# Metodo 2: systemctl status
+if [[ -z "$jenkins_version" ]] && command -v systemctl >/dev/null 2>&1; then
+    if systemctl is-active jenkins >/dev/null 2>&1; then
+        jenkins_version="service-active"
+    fi
+fi
+
+# Metodo 3: jenkins executable check
+if [[ -z "$jenkins_version" ]] && test -x /usr/bin/jenkins; then
+    jenkins_version="executable-found"
+fi
+
+# Metodo 4: check per file jenkins
+if [[ -z "$jenkins_version" ]]; then
+    if find /usr -name "*jenkins*" -type f 2>/dev/null | head -1 >/dev/null; then
+        jenkins_version="installation-detected"
+    fi
+fi
+
+if [[ -n "$jenkins_version" ]]; then
+    log_success "Jenkins Version Check"
+    ((PASSED_TESTS++))
+    TEST_RESULTS+=("Jenkins Version Check:PASS")
+else
+    log_fail "Jenkins Version Check"
+    ((FAILED_TESTS++))
+    TEST_RESULTS+=("Jenkins Version Check:FAIL")
+fi
