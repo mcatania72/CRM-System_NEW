@@ -54,10 +54,10 @@ export class Customer {
     @UpdateDateColumn()
     updatedAt!: Date;
 
-    // Aggiunto cascade delete per evitare foreign key constraint errors
-    @OneToMany(() => Opportunity, opportunity => opportunity.customer, { cascade: ["remove"] })
+    // Senza cascade - controlliamo manualmente le dipendenze
+    @OneToMany(() => Opportunity, opportunity => opportunity.customer)
     opportunities!: Opportunity[];
 
-    @OneToMany(() => Interaction, interaction => interaction.customer, { cascade: ["remove"] })
+    @OneToMany(() => Interaction, interaction => interaction.customer)
     interactions!: Interaction[];
 }
