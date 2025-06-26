@@ -182,7 +182,7 @@ show_status() {
         log_success "Jenkins Web UI: RAGGIUNGIBILE"
         
         # Informazioni versione se disponibili
-        local version=$(curl -s "$JENKINS_URL/api/xml?xpath=/hudson/version" 2>/dev/null | sed -n 's|.*<version>\\(.*\\)</version>.*|\\1|p')
+        local version=$(curl -s "$JENKINS_URL/api/xml?xpath=/hudson/version" 2>/dev/null | sed -n 's|.*<version>\(.*\)</version>.*|\1|p')
         if [ -n "$version" ]; then
             log_info "Versione Jenkins: $version"
         fi
@@ -209,7 +209,7 @@ show_status() {
         echo "  - Job trovati: $job_count"
         
         if [ $job_count -gt 0 ]; then
-            find "$PIPELINE_JOBS_DIR" -mindepth 1 -maxdepth 1 -type d -exec basename {} \\; | while read job; do
+            find "$PIPELINE_JOBS_DIR" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | while read job; do
                 echo "    • $job"
             done
         fi
