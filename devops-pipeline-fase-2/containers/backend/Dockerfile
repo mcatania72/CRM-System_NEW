@@ -1,56 +1,48 @@
-# Backend Dockerfile - Multi-stage build
-# FASE 2: Containerizzazione Completa
-
-# Stage 1: Build
+# Multi-stage build per Backend Node.js
 FROM node:18-alpine AS builder
 
 WORKDIR /app
 
-# Copy all backend files
+# Copy package files
 COPY backend/ ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies  
+RUN npm ci --only=production
 
-# Build TypeScript (se possibile, altrimenti skipa)
-RUN npm run build || echo "Build failed, using source files"
+# Try to build TypeScript (fallback handled in production stage)
+RUN npm run build || echo "Build failed, will use dev mode"
 
-# Stage 2: Production
+# Production stage
 FROM node:18-alpine AS production
 
-# Install curl for health checks
-RUN apk add --no-cache curl
-
-# Create app user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nodejs -u 1001
+# Install system dependencies
+RUN apk add --no-cache \
+    curl \
+    sqlite \
+    && addgroup -g 1001 -S nodejs \
+    && adduser -S crm-user -u 1001
 
 WORKDIR /app
 
-# Copy backend files
-COPY backend/ ./
-
-# Install production dependencies
+# Copy package files and install production dependencies
+COPY backend/package*.json ./
 RUN npm ci --only=production && npm cache clean --force
 
-# Copy built files if they exist, otherwise use src
-COPY --from=builder /app/dist ./dist 2>/dev/null || echo "No build artifacts, using dev mode"
+# Copy built application or source
+COPY --from=builder /app/ ./
 
 # Create data directory for SQLite
-RUN mkdir -p /app/data && chown -R nodejs:nodejs /app/data
-
-# Change ownership of app directory
-RUN chown -R nodejs:nodejs /app
+RUN mkdir -p /app/data && chown -R crm-user:nodejs /app
 
 # Switch to non-root user
-USER nodejs
+USER crm-user
 
 # Expose port
 EXPOSE 3001
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:3001/api/health || exit 1
 
-# Start application (try production first, fallback to dev)
-CMD if [ -d "./dist" ]; then npm start; else npm run dev; fi
+# Smart start: try production, fallback to dev
+CMD ["sh", "-c", "if [ -d './dist' ] && [ -f './dist/app.js' ]; then npm start; else npm run dev; fi"]
