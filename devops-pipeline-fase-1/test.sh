@@ -1,14 +1,19 @@
 #!/bin/bash
 
-# CRM System Test Suite v2.1
+# CRM System Test Suite v2.2
 # FASE 1: Validazione Base
-# Fix: sintassi corretta per stringhe con parentesi
+# Fix: contatori corretti + test con IP esterno invece di localhost
 
 # Configurazioni
 LOG_FILE="$HOME/test.log"
 REPORT_FILE="$HOME/test-report.json"
-BACKEND_URL="http://localhost:3001"
-FRONTEND_URL="http://localhost:3000"
+
+# Determina IP della VM automaticamente
+VM_IP=$(ip route get 1 | awk '{print $7; exit}' 2>/dev/null || echo "192.168.1.29")
+
+# URL con IP esterno (come viene realmente acceduta)
+BACKEND_URL="http://$VM_IP:3001"
+FRONTEND_URL="http://$VM_IP:3000"
 
 # Colori per output
 RED='\033[0;31m'
@@ -17,7 +22,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Contatori test
+# Contatori test - INIZIALIZZAZIONE CORRETTA
 TOTAL_TESTS=0
 PASSED_TESTS=0
 FAILED_TESTS=0
@@ -41,12 +46,14 @@ log_test() {
 log_success() {
     echo -e "${GREEN}[PASS]${NC} $1"
     log "PASS: $1"
+    # CONTATORE CORRETTO - incrementa solo qui
     ((PASSED_TESTS++))
 }
 
 log_fail() {
     echo -e "${RED}[FAIL]${NC} $1"
     log "FAIL: $1"
+    # CONTATORE CORRETTO - incrementa solo qui
     ((FAILED_TESTS++))
 }
 
@@ -75,13 +82,14 @@ get_jwt_token() {
     return 1
 }
 
-# Funzione per eseguire test con gestione errori
+# Funzione per eseguire test con gestione errori - CONTATORE CORRETTO
 run_test() {
     local test_name="$1"
     local test_command="$2"
     local timeout_seconds="${3:-10}"
     
     log_test "$test_name"
+    # INCREMENTA TOTAL_TESTS SOLO UNA VOLTA
     ((TOTAL_TESTS++))
     
     # Esegui comando con timeout e cattura output
@@ -95,31 +103,45 @@ run_test() {
     fi
 }
 
-# Funzione per test API protette
+# Funzione per test API protette - CONTATORE CORRETTO
 run_authenticated_test() {
     local test_name="$1"
     local endpoint="$2"
     local timeout_seconds="${3:-10}"
     
+    # INCREMENTA TOTAL_TESTS SOLO UNA VOLTA
+    ((TOTAL_TESTS++))
+    log_test "$test_name"
+    
     if [ -z "$JWT_TOKEN" ]; then
         log_fail "$test_name (no JWT token)"
-        ((TOTAL_TESTS++))
-        ((FAILED_TESTS++))
         return 1
     fi
     
     local auth_command="curl -f -s -m $timeout_seconds -H 'Authorization: Bearer $JWT_TOKEN' $BACKEND_URL$endpoint"
-    run_test "$test_name" "$auth_command" "$timeout_seconds"
+    
+    # NON CHIAMARE run_test (che incrementerebbe di nuovo TOTAL_TESTS)
+    if timeout "$timeout_seconds" bash -c "$auth_command" >> "$LOG_FILE" 2>&1; then
+        log_success "$test_name"
+        return 0
+    else
+        local exit_code=$?
+        log_fail "$test_name (exit code: $exit_code)"
+        return 1
+    fi
 }
 
 # Inizio test suite
 echo ""
 echo "======================================="
-echo "   CRM System - Test Suite v2.1"
+echo "   CRM System - Test Suite v2.2"
 echo "   FASE 1: Validazione Base"
 echo "======================================="
 
 log_info "Avvio test suite per FASE 1..."
+log_info "VM IP rilevato: $VM_IP"
+log_info "Backend URL: $BACKEND_URL"
+log_info "Frontend URL: $FRONTEND_URL"
 
 # Test 1: Connettività Base
 echo ""
@@ -132,8 +154,8 @@ log_info "Testando connettività frontend..."
 run_test "Frontend Response" "curl -f -s -m 5 $FRONTEND_URL"
 
 log_info "Testando porte..."
-run_test "Backend Port 3001" "nc -z -w 3 localhost 3001"
-run_test "Frontend Port 3000" "nc -z -w 3 localhost 3000"
+run_test "Backend Port 3001" "nc -z -w 3 $VM_IP 3001"
+run_test "Frontend Port 3000" "nc -z -w 3 $VM_IP 3000"
 
 # Test 2: Autenticazione e JWT
 echo ""
@@ -141,7 +163,7 @@ echo "=== Test Autenticazione ==="
 log_info "Testando endpoint di autenticazione..."
 run_test "Auth Login Endpoint" "curl -f -s -m 5 -X POST $BACKEND_URL/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@crm.local\",\"password\":\"admin123\"}'"
 
-# Ottieni JWT token per i test successivi
+# Ottieni JWT token per i test successivi (NON incrementa contatori)
 get_jwt_token
 
 # Test 3: API Endpoints Protette
@@ -167,6 +189,7 @@ if command -v sqlite3 >/dev/null 2>&1; then
     run_test "Admin User Exists" "sqlite3 $HOME/devops/CRM-System/backend/database.sqlite \"SELECT email FROM user WHERE email='admin@crm.local';\""
 else
     log_info "SQLite3 non disponibile, saltando test database"
+    # INCREMENTA CORRETTAMENTE I CONTATORI PER TEST SALTATI
     ((TOTAL_TESTS+=2))
     log_fail "Database Readable - sqlite3 non installato"
     log_fail "Admin User Exists - sqlite3 non installato"
@@ -210,7 +233,7 @@ echo ""
 echo "=== Test Network ==="
 
 log_info "Testando configurazione di rete..."
-run_test "Backend CORS Test" "curl -s -H 'Origin: http://localhost:3000' $BACKEND_URL/api/health | grep -q 'OK'"
+run_test "Backend CORS Test" "curl -s -H 'Origin: http://$VM_IP:3000' $BACKEND_URL/api/health | grep -q 'OK'"
 
 # Test 9: Performance di Base
 echo ""
@@ -220,13 +243,24 @@ log_info "Testando performance di base..."
 run_test "Backend Response Time" "timeout 3 curl -s $BACKEND_URL/api/health >/dev/null"
 run_test "Frontend Load Time" "timeout 5 curl -s $FRONTEND_URL >/dev/null"
 
+# Test 10: Accesso Esterno (Real World)
+echo ""
+echo "=== Test Accesso Esterno ==="
+
+log_info "Testando accesso dall'esterno (real world)..."
+run_test "External Backend Access" "curl -f -s -m 5 $BACKEND_URL/api/health"
+run_test "External Frontend Access" "curl -f -s -m 5 $FRONTEND_URL"
+
 # Genera report finale
 echo ""
 echo "======================================="
 echo "   RISULTATI TEST AUTOMATICI"
 echo "======================================="
 
-# Calcola percentuale successo
+# VERIFICA CONTATORI PRIMA DEL CALCOLO
+log_info "Debug contatori - Total: $TOTAL_TESTS, Passed: $PASSED_TESTS, Failed: $FAILED_TESTS"
+
+# Calcola percentuale successo - MATEMATICA CORRETTA
 if [ $TOTAL_TESTS -gt 0 ]; then
     SUCCESS_RATE=$(( PASSED_TESTS * 100 / TOTAL_TESTS ))
 else
@@ -238,11 +272,20 @@ echo "Test Passati: $PASSED_TESTS"
 echo "Test Falliti: $FAILED_TESTS"
 echo "Tasso di Successo: $SUCCESS_RATE%"
 
+# Verifica che i contatori siano coerenti
+EXPECTED_TOTAL=$((PASSED_TESTS + FAILED_TESTS))
+if [ $TOTAL_TESTS -ne $EXPECTED_TOTAL ]; then
+    log_warning "ATTENZIONE: Contatori non coerenti! Total=$TOTAL_TESTS, Expected=$EXPECTED_TOTAL"
+fi
+
 # Genera report JSON
 cat > "$REPORT_FILE" << EOF
 {
-  "test_suite": "CRM System FASE 1 v2.1",
+  "test_suite": "CRM System FASE 1 v2.2",
   "timestamp": "$(date -Iseconds)",
+  "vm_ip": "$VM_IP",
+  "backend_url": "$BACKEND_URL",
+  "frontend_url": "$FRONTEND_URL",
   "total_tests": $TOTAL_TESTS,
   "passed_tests": $PASSED_TESTS,
   "failed_tests": $FAILED_TESTS,
@@ -265,6 +308,7 @@ if [ $SUCCESS_RATE -ge 95 ]; then
     echo "   - Database completamente operativo"
     echo "   - API endpoints tutti attivi"
     echo "   - Autenticazione JWT funzionante"
+    echo "   - Accesso esterno verificato (IP: $VM_IP)"
     echo ""
     echo "🚀 PRONTO PER FASE 2: CONTAINERIZZAZIONE COMPLETA"
 elif [ $SUCCESS_RATE -ge 80 ]; then
@@ -278,6 +322,7 @@ elif [ $SUCCESS_RATE -ge 80 ]; then
     echo "   - Frontend funzionante"
     echo "   - Database operativo"
     echo "   - API endpoints attivi"
+    echo "   - Accesso esterno funzionante (IP: $VM_IP)"
     echo ""
     echo "🚀 PRONTO PER FASE 2: CONTAINERIZZAZIONE COMPLETA"
 else
@@ -304,7 +349,7 @@ show_manual_tests() {
     echo "Esegui questi test manuali nel browser:"
     echo ""
     echo "1. 🌐 ACCESSO APPLICAZIONE"
-    echo "   URL: http://192.168.1.29:3000"
+    echo "   URL: $FRONTEND_URL"
     echo "   ✓ La pagina si carica correttamente"
     echo "   ✓ Nessun errore nella console browser (F12)"
     echo ""
