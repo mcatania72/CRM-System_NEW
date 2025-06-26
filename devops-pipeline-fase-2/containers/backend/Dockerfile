@@ -12,7 +12,7 @@ COPY backend/package*.json ./
 # Install dependencies
 RUN npm ci --only=production
 
-# Copy source code
+# Copy source code and config
 COPY backend/src ./src
 COPY backend/tsconfig.json ./
 
