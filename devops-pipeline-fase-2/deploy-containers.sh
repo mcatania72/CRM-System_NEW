@@ -6,8 +6,8 @@
 set -e
 
 # Configurazioni
-COMPOSE_FILE="docker-compose.yml"
-COMPOSE_OVERRIDE="docker-compose.override.yml"
+CRM_SYSTEM_DIR="$HOME/devops/CRM-System"
+COMPOSE_FILE="devops-pipeline-fase-2/docker-compose.yml"
 LOG_FILE="$HOME/deploy-containers.log"
 PROJECT_NAME="crm-system"
 
@@ -63,13 +63,27 @@ check_prerequisites() {
         exit 1
     fi
     
+    # Verifica directory CRM-System
+    if [ ! -d "$CRM_SYSTEM_DIR" ]; then
+        log_error "Directory $CRM_SYSTEM_DIR non trovata. Esegui sync prima."
+        exit 1
+    fi
+    
+    # Verifica backend e frontend
+    if [ ! -d "$CRM_SYSTEM_DIR/backend" ] || [ ! -d "$CRM_SYSTEM_DIR/frontend" ]; then
+        log_error "Directory backend o frontend non trovate in $CRM_SYSTEM_DIR"
+        exit 1
+    fi
+    
     log_success "Prerequisites OK"
 }
 
 # Funzione per verificare file compose
 check_compose_files() {
+    cd "$CRM_SYSTEM_DIR"
+    
     if [ ! -f "$COMPOSE_FILE" ]; then
-        log_error "File $COMPOSE_FILE non trovato"
+        log_error "File $COMPOSE_FILE non trovato in $CRM_SYSTEM_DIR"
         exit 1
     fi
     
@@ -82,6 +96,12 @@ check_compose_files() {
     log_success "File Compose validi"
 }
 
+# Funzione per eseguire docker-compose dal directory corretto
+run_compose() {
+    cd "$CRM_SYSTEM_DIR"
+    docker-compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" "$@"
+}
+
 # Funzione per mostrare status containers
 show_status() {
     echo ""
@@ -90,18 +110,20 @@ show_status() {
     echo "   FASE 2: Containerizzazione"
     echo "======================================="
     
+    cd "$CRM_SYSTEM_DIR"
+    
     # Status containers
     log_info "Status Container:"
-    if docker-compose -p "$PROJECT_NAME" ps | grep -q "Up"; then
+    if run_compose ps | grep -q "Up"; then
         echo ""
-        docker-compose -p "$PROJECT_NAME" ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
+        run_compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
         echo ""
         
         # Health checks
         log_info "Health Checks:"
         for service in backend frontend; do
-            if docker-compose -p "$PROJECT_NAME" ps "$service" | grep -q "Up"; then
-                local health=$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT_NAME}_${service}_1" 2>/dev/null || echo "unknown")
+            if run_compose ps "$service" | grep -q "Up"; then
+                local health=$(docker inspect --format='{{.State.Health.Status}}' "crm-${service}" 2>/dev/null || echo "unknown")
                 case $health in
                     "healthy")
                         echo -e "  ${GREEN}✓${NC} $service: HEALTHY"
@@ -172,19 +194,18 @@ start_containers() {
     
     log_info "Avvio container CRM System..."
     
+    cd "$CRM_SYSTEM_DIR"
+    
     # Crea network se non esiste
     if ! docker network ls | grep -q "crm-network"; then
         log_info "Creazione network crm-network..."
         docker network create crm-network
     fi
     
-    # Crea directory per volumi se non esiste
-    mkdir -p "./data"
-    
     # Build e start containers
     log_info "Build e avvio container..."
     
-    if docker-compose -p "$PROJECT_NAME" up -d --build; then
+    if run_compose up -d --build; then
         log_success "Container avviati con successo"
         
         # Attendi che i servizi siano pronti
@@ -227,7 +248,7 @@ stop_containers() {
     
     log_info "Arresto container..."
     
-    if docker-compose -p "$PROJECT_NAME" down; then
+    if run_compose down; then
         log_success "Container arrestati con successo"
     else
         log_warning "Alcuni container potrebbero non essere stati arrestati correttamente"
@@ -248,11 +269,13 @@ cleanup_containers() {
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         log_info "Cleanup completo..."
         
+        cd "$CRM_SYSTEM_DIR"
+        
         # Stop e rimozione container
-        docker-compose -p "$PROJECT_NAME" down -v --remove-orphans
+        run_compose down -v --remove-orphans
         
         # Rimozione immagini
-        docker-compose -p "$PROJECT_NAME" down --rmi all
+        run_compose down --rmi all
         
         # Pulizia volumi orfani
         docker volume prune -f
@@ -274,12 +297,14 @@ show_logs() {
     echo "   CRM System - Container Logs"
     echo "======================================="
     
+    cd "$CRM_SYSTEM_DIR"
+    
     if [ -n "$service" ]; then
         log_info "Logs per servizio: $service"
-        docker-compose -p "$PROJECT_NAME" logs -f "$service"
+        run_compose logs -f "$service"
     else
         log_info "Logs per tutti i servizi (Ctrl+C per uscire)"
-        docker-compose -p "$PROJECT_NAME" logs -f
+        run_compose logs -f
     fi
 }
 
@@ -295,7 +320,7 @@ force_build() {
     
     log_info "Build forzato container (no cache)..."
     
-    if docker-compose -p "$PROJECT_NAME" build --no-cache; then
+    if run_compose build --no-cache; then
         log_success "Build completato con successo"
     else
         log_error "Errore durante il build"
@@ -334,7 +359,8 @@ case "${1:-start}" in
         cleanup_containers
         ;;
     "ps")
-        docker-compose -p "$PROJECT_NAME" ps
+        cd "$CRM_SYSTEM_DIR"
+        run_compose ps
         ;;
     "exec")
         if [ -z "$2" ]; then
@@ -342,7 +368,8 @@ case "${1:-start}" in
             echo "Servizi disponibili: backend, frontend"
             exit 1
         fi
-        docker-compose -p "$PROJECT_NAME" exec "$2" "${3:-sh}"
+        cd "$CRM_SYSTEM_DIR"
+        run_compose exec "$2" "${3:-sh}"
         ;;
     *)
         echo "Uso: $0 {start|stop|restart|status|logs|build|down|cleanup|ps|exec}"
