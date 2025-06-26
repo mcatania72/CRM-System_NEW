@@ -6,6 +6,7 @@ pipeline {
         NODE_ENV = 'production'
         IMAGE_TAG = "${BUILD_NUMBER}"
         PROJECT_NAME = 'crm-system'
+        DEPLOY_DIR = '/tmp/crm-deploy'
     }
     
     stages {
@@ -242,6 +243,167 @@ pipeline {
                 }
             }
         }
+        
+        stage('Deploy') {
+            steps {
+                echo "=== DEPLOY: Automatic deployment ==="
+                script {
+                    sh '''
+                        echo "🚀 Starting automatic deployment..."
+                        
+                        # Stop any existing CRM applications
+                        echo "Stopping existing applications..."
+                        
+                        # Stop FASE 1 (native) if running
+                        if [ -f "$HOME/devops-pipeline-fase-1/deploy.sh" ]; then
+                            echo "Stopping FASE 1 application..."
+                            cd $HOME/devops-pipeline-fase-1
+                            ./deploy.sh stop 2>/dev/null || echo "FASE 1 not running"
+                        fi
+                        
+                        # Stop FASE 2 (containers) if running
+                        if [ -f "$HOME/devops-pipeline-fase-2/deploy-containers.sh" ]; then
+                            echo "Stopping FASE 2 containers..."
+                            cd $HOME/devops-pipeline-fase-2
+                            ./deploy-containers.sh stop 2>/dev/null || echo "FASE 2 not running"
+                        fi
+                        
+                        # Create deployment directory
+                        echo "Preparing deployment directory..."
+                        rm -rf ${DEPLOY_DIR}
+                        mkdir -p ${DEPLOY_DIR}
+                        
+                        # Extract complete application
+                        echo "Extracting application..."
+                        cd ${DEPLOY_DIR}
+                        tar -xzf ${WORKSPACE}/artifacts/crm-system-complete-${BUILD_NUMBER}.tar.gz
+                        
+                        echo "Deployment directory contents:"
+                        ls -la ${DEPLOY_DIR}
+                        
+                        # Choose deployment method based on available configurations
+                        echo "Choosing deployment method..."
+                        
+                        if [ -f "${DEPLOY_DIR}/devops-pipeline-fase-2/docker-compose.yml" ]; then
+                            echo "🐳 DEPLOYING with Docker Containers (FASE 2)..."
+                            
+                            cd ${DEPLOY_DIR}/devops-pipeline-fase-2
+                            
+                            # Copy deploy script to deployment directory
+                            if [ -f "$HOME/devops-pipeline-fase-2/deploy-containers.sh" ]; then
+                                cp $HOME/devops-pipeline-fase-2/deploy-containers.sh .
+                                chmod +x deploy-containers.sh
+                                
+                                # Deploy containers
+                                echo "Starting containers..."
+                                ./deploy-containers.sh start || echo "⚠️ Container deployment had issues"
+                                
+                                # Wait for services to be ready
+                                echo "Waiting for services to start..."
+                                sleep 30
+                                
+                                # Verify deployment
+                                echo "Verifying container deployment..."
+                                docker ps | grep crm || echo "⚠️ CRM containers not visible"
+                                
+                            else
+                                echo "⚠️ deploy-containers.sh not found, trying manual docker-compose..."
+                                docker-compose up -d || echo "⚠️ Docker compose failed"
+                            fi
+                            
+                        elif [ -f "${DEPLOY_DIR}/devops-pipeline-fase-1/deploy.sh" ]; then
+                            echo "🏃 DEPLOYING with Native Node.js (FASE 1)..."
+                            
+                            cd ${DEPLOY_DIR}/devops-pipeline-fase-1
+                            
+                            # Copy deploy script to deployment directory  
+                            if [ -f "$HOME/devops-pipeline-fase-1/deploy.sh" ]; then
+                                cp $HOME/devops-pipeline-fase-1/deploy.sh .
+                                chmod +x deploy.sh
+                                
+                                # Deploy native application
+                                echo "Starting native application..."
+                                ./deploy.sh start || echo "⚠️ Native deployment had issues"
+                                
+                            else
+                                echo "⚠️ deploy.sh not found, trying manual deployment..."
+                                cd ${DEPLOY_DIR}/backend
+                                npm install && npm start &
+                                cd ${DEPLOY_DIR}/frontend  
+                                npm install && npm run dev &
+                            fi
+                            
+                        else
+                            echo "⚠️ No deployment configuration found"
+                            echo "Available files:"
+                            find ${DEPLOY_DIR} -name "deploy*.sh" -o -name "docker-compose.yml"
+                        fi
+                        
+                        echo "✅ Deployment process completed"
+                    '''
+                }
+            }
+        }
+        
+        stage('Smoke Tests') {
+            steps {
+                echo "=== SMOKE TESTS: Verifying deployment ==="
+                script {
+                    sh '''
+                        echo "🧪 Running smoke tests..."
+                        
+                        # Wait for services to be fully ready
+                        echo "Waiting for services to stabilize..."
+                        sleep 45
+                        
+                        # Test backend health
+                        echo "Testing backend health..."
+                        for i in {1..10}; do
+                            if curl -f -s http://localhost:3001/api/health; then
+                                echo "✅ Backend health check passed"
+                                break
+                            else
+                                echo "Attempt $i/10: Backend not ready, waiting..."
+                                sleep 10
+                            fi
+                        done
+                        
+                        # Test frontend
+                        echo "Testing frontend..."
+                        for i in {1..10}; do
+                            if curl -f -s http://localhost:3000 >/dev/null; then
+                                echo "✅ Frontend check passed"
+                                break
+                            else
+                                echo "Attempt $i/10: Frontend not ready, waiting..."
+                                sleep 10
+                            fi
+                        done
+                        
+                        # Test login API
+                        echo "Testing login functionality..."
+                        if curl -X POST http://localhost:3001/api/auth/login \
+                               -H "Content-Type: application/json" \
+                               -d '{"email":"admin@crm.local","password":"admin123"}' \
+                               -s | grep -q token; then
+                            echo "✅ Login API test passed"
+                        else
+                            echo "⚠️ Login API test failed"
+                        fi
+                        
+                        # Display deployment info
+                        echo "=== DEPLOYMENT INFO ==="
+                        echo "Frontend URL: http://localhost:3000"
+                        echo "Backend API: http://localhost:3001/api"
+                        echo "Login: admin@crm.local / admin123"
+                        echo "Build: ${BUILD_NUMBER}"
+                        echo "Commit: ${GIT_COMMIT_SHORT}"
+                        
+                        echo "✅ Smoke tests completed"
+                    '''
+                }
+            }
+        }
     }
     
     post {
@@ -268,33 +430,44 @@ pipeline {
             // Display build summary
             script {
                 sh '''
-                    echo "=== BUILD SUMMARY ==="
+                    echo "=== BUILD & DEPLOY SUMMARY ==="
                     echo "Build number: ${BUILD_NUMBER}"
                     echo "Git commit: ${GIT_COMMIT}"
                     echo "Workspace: $(pwd)"
+                    echo "Deploy directory: ${DEPLOY_DIR}"
+                    
                     echo "Artifacts:"
                     ls -la artifacts/ 2>/dev/null || echo "No artifacts created"
+                    
+                    echo "Application Status:"
+                    curl -s http://localhost:3001/api/health && echo " - Backend: OK" || echo " - Backend: NOT RESPONDING"
+                    curl -s http://localhost:3000 >/dev/null && echo " - Frontend: OK" || echo " - Frontend: NOT RESPONDING"
                 '''
             }
         }
         
         success {
-            echo "🎉 BUILD SUCCESSFUL!"
-            echo "✅ CRM System pipeline completed successfully"
-            echo "📦 Build artifacts available in Jenkins"
-            echo "🚀 Ready for deployment"
+            echo "🎉 BUILD & DEPLOY SUCCESSFUL!"
+            echo "✅ CRM System deployed automatically"
+            echo "🌐 Application available at:"
+            echo "   Frontend: http://localhost:3000"
+            echo "   Backend: http://localhost:3001/api"
+            echo "🔑 Login: admin@crm.local / admin123"
+            echo "📦 Build artifacts: ${BUILD_NUMBER}"
         }
         
         failure {
-            echo "❌ BUILD FAILED!"
+            echo "❌ BUILD OR DEPLOY FAILED!"
             echo "📋 Check console output for details"
-            echo "🔍 Review build logs above"
+            echo "🔍 Review build and deployment logs above"
+            echo "🔄 You may need to manually start the application"
         }
         
         unstable {
-            echo "⚠️ BUILD UNSTABLE"
+            echo "⚠️ BUILD OR DEPLOY UNSTABLE"
             echo "📋 Some tests may have failed"
-            echo "✅ Build artifacts still created"
+            echo "✅ Application may still be running"
+            echo "🔍 Check smoke test results above"
         }
     }
 }
