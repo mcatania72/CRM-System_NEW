@@ -33,17 +33,18 @@ import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import { Customer, customerService } from '../services/api';
 
+// Schema Yup corretto - solo nome e status obbligatori
 const schema = yup.object({
   name: yup.string().required('Nome richiesto'),
-  company: yup.string(),
-  industry: yup.string(),
-  email: yup.string().email('Email non valida'),
-  phone: yup.string(),
-  address: yup.string(),
-  city: yup.string(),
-  country: yup.string(),
+  company: yup.string().nullable(),
+  industry: yup.string().nullable(),
+  email: yup.string().email('Email non valida').nullable(),
+  phone: yup.string().nullable(),
+  address: yup.string().nullable(),
+  city: yup.string().nullable(),
+  country: yup.string().nullable(),
   status: yup.string().required('Status richiesto'),
-  notes: yup.string(),
+  notes: yup.string().nullable(),
 });
 
 const statusOptions = [
@@ -68,9 +69,10 @@ const Customers: React.FC = () => {
     control,
     handleSubmit,
     reset,
-    formState: { errors },
+    formState: { errors, isValid },
   } = useForm<Customer>({
     resolver: yupResolver(schema) as any,
+    mode: 'onChange', // Validazione real-time
     defaultValues: {
       status: 'prospect',
     },
@@ -99,9 +101,33 @@ const Customers: React.FC = () => {
   const handleOpenDialog = (customer?: Customer) => {
     setEditingCustomer(customer || null);
     if (customer) {
-      reset(customer);
+      // Reset con i valori del customer per modifica
+      reset({
+        name: customer.name || '',
+        company: customer.company || '',
+        industry: customer.industry || '',
+        email: customer.email || '',
+        phone: customer.phone || '',
+        address: customer.address || '',
+        city: customer.city || '',
+        country: customer.country || '',
+        status: customer.status || 'prospect',
+        notes: customer.notes || ''
+      });
     } else {
-      reset({ status: 'prospect' });
+      // Reset per nuovo customer
+      reset({
+        name: '',
+        company: '',
+        industry: '',
+        email: '',
+        phone: '',
+        address: '',
+        city: '',
+        country: '',
+        status: 'prospect',
+        notes: ''
+      });
     }
     setOpen(true);
   };
@@ -114,10 +140,17 @@ const Customers: React.FC = () => {
 
   const onSubmit = async (data: Customer) => {
     try {
+      // Pulisci campi vuoti (trasforma stringhe vuote in null)
+      const cleanedData = Object.keys(data).reduce((acc, key) => {
+        const value = data[key as keyof Customer];
+        acc[key as keyof Customer] = value === '' ? null : value;
+        return acc;
+      }, {} as any);
+
       if (editingCustomer) {
-        await customerService.update(editingCustomer.id!, data);
+        await customerService.update(editingCustomer.id!, cleanedData);
       } else {
-        await customerService.create(data);
+        await customerService.create(cleanedData);
       }
       
       handleCloseDialog();
@@ -128,7 +161,7 @@ const Customers: React.FC = () => {
   };
 
   const handleDelete = async (id: number) => {
-    if (window.confirm('Sei sicuro di voler eliminare questo cliente?')) {
+    if (window.confirm('Sei sicuro di voler eliminare questo cliente? Verranno eliminate anche tutte le opportunità e interazioni associate.')) {
       try {
         await customerService.delete(id);
         loadCustomers();
@@ -453,7 +486,11 @@ const Customers: React.FC = () => {
           </DialogContent>
           <DialogActions>
             <Button onClick={handleCloseDialog}>Annulla</Button>
-            <Button type="submit" variant="contained">
+            <Button 
+              type="submit" 
+              variant="contained"
+              disabled={!isValid}
+            >
               {editingCustomer ? 'Aggiorna' : 'Crea'}
             </Button>
           </DialogActions>
