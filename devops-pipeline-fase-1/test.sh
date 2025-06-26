@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# CRM System Test Suite v2.0
+# CRM System Test Suite v2.1
 # FASE 1: Validazione Base
-# Versione con autenticazione JWT per API protette
+# Fix: sintassi corretta per stringhe con parentesi
 
 # Configurazioni
 LOG_FILE="$HOME/test.log"
@@ -115,7 +115,7 @@ run_authenticated_test() {
 # Inizio test suite
 echo ""
 echo "======================================="
-echo "   CRM System - Test Suite v2.0"
+echo "   CRM System - Test Suite v2.1"
 echo "   FASE 1: Validazione Base"
 echo "======================================="
 
@@ -137,7 +137,7 @@ run_test "Frontend Port 3000" "nc -z -w 3 localhost 3000"
 
 # Test 2: Autenticazione e JWT
 echo ""
-echo "=== Test Autenticazione ===
+echo "=== Test Autenticazione ==="
 log_info "Testando endpoint di autenticazione..."
 run_test "Auth Login Endpoint" "curl -f -s -m 5 -X POST $BACKEND_URL/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@crm.local\",\"password\":\"admin123\"}'"
 
@@ -168,8 +168,8 @@ if command -v sqlite3 >/dev/null 2>&1; then
 else
     log_info "SQLite3 non disponibile, saltando test database"
     ((TOTAL_TESTS+=2))
-    log_fail "Database Readable (sqlite3 non installato)"
-    log_fail "Admin User Exists (sqlite3 non installato)"
+    log_fail "Database Readable - sqlite3 non installato"
+    log_fail "Admin User Exists - sqlite3 non installato"
 fi
 
 # Test 5: Processi
@@ -241,7 +241,7 @@ echo "Tasso di Successo: $SUCCESS_RATE%"
 # Genera report JSON
 cat > "$REPORT_FILE" << EOF
 {
-  "test_suite": "CRM System FASE 1 v2.0",
+  "test_suite": "CRM System FASE 1 v2.1",
   "timestamp": "$(date -Iseconds)",
   "total_tests": $TOTAL_TESTS,
   "passed_tests": $PASSED_TESTS,
