@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { AppDataSource } from '../data-source';
 import { Customer, CustomerStatus } from '../entity/Customer';
+import { Opportunity } from '../entity/Opportunity';
+import { Interaction } from '../entity/Interaction';
 import { validationResult } from 'express-validator';
 import { Like } from 'typeorm';
 
@@ -128,26 +130,52 @@ export class CustomerController {
         try {
             const { id } = req.params;
             const customerRepository = AppDataSource.getRepository(Customer);
+            const opportunityRepository = AppDataSource.getRepository(Opportunity);
+            const interactionRepository = AppDataSource.getRepository(Interaction);
             
-            // Trova il customer con le relazioni per verifica
-            const customer = await customerRepository.findOne({ 
-                where: { id: Number(id) },
-                relations: ['opportunities', 'interactions']
-            });
-            
+            // Trova il customer
+            const customer = await customerRepository.findOne({ where: { id: Number(id) } });
             if (!customer) {
                 return res.status(404).json({ message: 'Cliente non trovato' });
             }
 
-            // Log per debug
-            console.log(`Eliminando cliente ID ${id}:`, {
-                name: customer.name,
-                opportunities: customer.opportunities?.length || 0,
-                interactions: customer.interactions?.length || 0
+            // Controlla dipendenze - opportunità
+            const opportunitiesCount = await opportunityRepository.count({ 
+                where: { customer: { id: Number(id) } }
             });
 
-            // Rimuovi il customer (cascade dovrebbe gestire le relazioni)
+            // Controlla dipendenze - interazioni
+            const interactionsCount = await interactionRepository.count({ 
+                where: { customer: { id: Number(id) } }
+            });
+
+            // Se ci sono dipendenze, restituisci errore informativo
+            if (opportunitiesCount > 0 || interactionsCount > 0) {
+                const dependencies = [];
+                if (opportunitiesCount > 0) {
+                    dependencies.push(`${opportunitiesCount} opportunità`);
+                }
+                if (interactionsCount > 0) {
+                    dependencies.push(`${interactionsCount} interazioni`);
+                }
+
+                return res.status(409).json({
+                    message: 'Impossibile eliminare il cliente',
+                    reason: 'Il cliente ha dati collegati che devono essere eliminati prima',
+                    dependencies: dependencies.join(' e '),
+                    details: {
+                        customerName: customer.name,
+                        opportunitiesCount,
+                        interactionsCount
+                    },
+                    suggestion: 'Elimina prima tutte le opportunità e interazioni associate a questo cliente, oppure trasferiscile ad un altro cliente.'
+                });
+            }
+
+            // Se non ci sono dipendenze, procedi con l'eliminazione
             await customerRepository.remove(customer);
+            
+            console.log(`Cliente eliminato con successo: ${customer.name} (ID: ${id})`);
             
             res.json({ 
                 message: 'Cliente eliminato con successo',
@@ -159,17 +187,8 @@ export class CustomerController {
         } catch (error) {
             console.error('Errore nell\'eliminazione cliente:', error);
             
-            // Log più dettagliato per debug
-            if (error instanceof Error) {
-                console.error('Error details:', {
-                    name: error.name,
-                    message: error.message,
-                    stack: error.stack
-                });
-            }
-            
             res.status(500).json({ 
-                message: 'Errore nell\'eliminazione cliente',
+                message: 'Errore interno del server',
                 details: process.env.NODE_ENV === 'development' ? error : undefined
             });
         }
