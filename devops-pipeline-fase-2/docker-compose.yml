@@ -9,7 +9,7 @@ volumes:
 services:
   backend:
     build:
-      context: .
+      context: ../
       dockerfile: devops-pipeline-fase-2/containers/backend/Dockerfile
     container_name: crm-backend
     ports:
@@ -32,7 +32,7 @@ services:
 
   frontend:
     build:
-      context: .
+      context: ../
       dockerfile: devops-pipeline-fase-2/containers/frontend/Dockerfile
     container_name: crm-frontend
     ports:
