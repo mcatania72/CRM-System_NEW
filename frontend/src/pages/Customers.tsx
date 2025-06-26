@@ -161,13 +161,33 @@ const Customers: React.FC = () => {
   };
 
   const handleDelete = async (id: number) => {
-    if (window.confirm('Sei sicuro di voler eliminare questo cliente? Verranno eliminate anche tutte le opportunità e interazioni associate.')) {
-      try {
-        await customerService.delete(id);
-        loadCustomers();
-      } catch (err: any) {
+    try {
+      await customerService.delete(id);
+      loadCustomers();
+    } catch (err: any) {
+      // Gestione errori specifici per dipendenze
+      if (err.response?.status === 409) {
+        const errorData = err.response.data;
+        const dependencyMessage = `
+Impossibile eliminare il cliente "${errorData.details?.customerName}".
+
+Il cliente ha i seguenti dati collegati:
+• ${errorData.dependencies}
+
+${errorData.suggestion}
+        `.trim();
+        
+        setError(dependencyMessage);
+      } else {
         setError(err.response?.data?.message || 'Errore nell\'eliminazione cliente');
       }
+    }
+  };
+
+  const confirmDelete = (customer: Customer) => {
+    const message = `Sei sicuro di voler eliminare il cliente "${customer.name}"?`;
+    if (window.confirm(message)) {
+      handleDelete(customer.id!);
     }
   };
 
@@ -250,7 +270,7 @@ const Customers: React.FC = () => {
             </Tooltip>
           }
           label="Elimina"
-          onClick={() => handleDelete(params.row.id)}
+          onClick={() => confirmDelete(params.row)}
         />,
       ],
     },
@@ -270,7 +290,14 @@ const Customers: React.FC = () => {
       </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+        <Alert 
+          severity="error" 
+          sx={{ 
+            mb: 2,
+            whiteSpace: 'pre-line' // Permette line breaks nel messaggio 
+          }} 
+          onClose={() => setError('')}
+        >
           {error}
         </Alert>
       )}
