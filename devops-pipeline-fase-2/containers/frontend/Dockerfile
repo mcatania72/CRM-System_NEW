@@ -24,15 +24,15 @@ COPY devops-pipeline-fase-2/containers/frontend/nginx.conf /etc/nginx/nginx.conf
 # Copy built application
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Create non-root user
-RUN addgroup -g 1001 -S nginx && \
-    adduser -S nginx-user -u 1001 -G nginx
+# Create non-root user (use existing nginx group)
+RUN adduser -S nginx-user -u 1001 -G nginx
 
 # Set permissions
 RUN chown -R nginx-user:nginx /usr/share/nginx/html && \
     chown -R nginx-user:nginx /var/cache/nginx && \
     chown -R nginx-user:nginx /var/log/nginx && \
-    chown -R nginx-user:nginx /etc/nginx/conf.d
+    chown -R nginx-user:nginx /etc/nginx/conf.d && \
+    chmod -R 755 /var/cache/nginx /var/log/nginx
 
 # Switch to non-root user
 USER nginx-user
