@@ -6,8 +6,8 @@ WORKDIR /app
 # Copy package files
 COPY backend/ ./
 
-# Install dependencies (use npm install if no package-lock.json)
-RUN if [ -f "package-lock.json" ]; then npm ci --omit=dev; else npm install --omit=dev; fi
+# Install ALL dependencies (including devDependencies for build)
+RUN if [ -f "package-lock.json" ]; then npm ci; else npm install; fi
 
 # Try to build TypeScript (fallback handled in production stage)
 RUN npm run build || echo "Build failed, will use dev mode"
@@ -24,7 +24,7 @@ RUN apk add --no-cache \
 
 WORKDIR /app
 
-# Copy package files and install production dependencies
+# Copy package files and install ONLY production dependencies
 COPY backend/package*.json ./
 RUN if [ -f "package-lock.json" ]; then npm ci --omit=dev; else npm install --omit=dev; fi && npm cache clean --force
 
