@@ -14,7 +14,7 @@ import interactionRoutes from './routes/interactions';
 import dashboardRoutes from './routes/dashboard';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = parseInt(process.env.PORT || '3001', 10); // Fix: assicura che sia number
 
 // Rate limiting
 const limiter = rateLimit({
@@ -86,6 +86,7 @@ AppDataSource.initialize()
         // Crea utente admin di default se non esiste
         await createDefaultAdmin();
         
+        // Fix: usa solo PORT (number) e host string separato
         app.listen(PORT, '0.0.0.0', () => {
             console.log(`Server in esecuzione sulla porta ${PORT}`);
             console.log(`Health check: http://localhost:${PORT}/api/health`);
