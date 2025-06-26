@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# sync-devops-config.sh v3.0
+# sync-devops-config.sh v3.1
 # Script per sincronizzare la configurazione DevOps dalla repository GitHub
-# Versione ultra-robusta con gestione processi attivi e cleanup completo
+# Fix del bug local nella linea 316
 
 set -e  # Exit on any error
 
@@ -146,7 +146,7 @@ safe_remove_directory() {
         fi
     done
     
-    print_error "Impossibile rimuovere directory dopo $max_attempts tentative: $dir_path"
+    print_error "Impossibile rimuovere directory dopo $max_attempts tentativi: $dir_path"
     return 1
 }
 
@@ -174,12 +174,12 @@ verify_file_integrity() {
 # Banner
 echo -e "${BLUE}"
 echo "======================================="
-echo "   CRM System - DevOps Sync Script v3.0"
+echo "   CRM System - DevOps Sync Script v3.1"
 echo "   FASE 1: Validazione Base"
 echo "======================================="
 echo -e "${NC}"
 
-print_status $BLUE "Inizializzazione sync DevOps config v3.0..."
+print_status $BLUE "Inizializzazione sync DevOps config v3.1..."
 
 # Verifica prerequisiti
 if ! command -v git &> /dev/null; then
@@ -262,9 +262,22 @@ fi
 
 # STEP 8: Copiare la directory devops-pipeline-fase-1 nella home
 print_status $BLUE "Copia configurazione DevOps..."
-cp -r "$PROJECT_DIR/devops-pipeline-fase-1" "$HOME/"
+if cp -r "$PROJECT_DIR/devops-pipeline-fase-1" "$HOME/"; then
+    print_success "Configurazione DevOps copiata con successo"
+else
+    print_error "Errore durante la copia della configurazione"
+    
+    # Ripristina backup se esiste
+    if [ -n "$BACKUP_DIR" ] && [ -d "$BACKUP_DIR" ]; then
+        print_warning "Ripristino backup..."
+        mv "$BACKUP_DIR" "$DEVOPS_CONFIG_DIR"
+        print_success "Backup ripristinato"
+    fi
+    exit 1
+fi
 
 # STEP 9: Rendere eseguibili tutti gli script
+print_status $BLUE "Rendendo eseguibili gli script..."
 chmod +x "$HOME/devops-pipeline-fase-1"/*.sh
 
 # STEP 10: Verifica integrità dei file con dimensioni minime attese
@@ -313,7 +326,8 @@ fi
 
 # STEP 13: Verifica versione test.sh (deve essere v2.0+)
 if grep -q "v2.0\|v3.0" "$HOME/devops-pipeline-fase-1/test.sh"; then
-    local version=$(grep -o "v[0-9]\+\.[0-9]\+" "$HOME/devops-pipeline-fase-1/test.sh" | head -1)
+    # Fix: rimossa variabile local
+    version=$(grep -o "v[0-9]\+\.[0-9]\+" "$HOME/devops-pipeline-fase-1/test.sh" | head -1)
     print_success "✓ test.sh versione $version verificata"
 else
     print_warning "test.sh potrebbe non essere la versione più recente"
@@ -334,7 +348,7 @@ fi
 # STEP 16: Output informazioni dettagliate
 echo -e "${GREEN}"
 echo "======================================="
-echo "   SINCRONIZZAZIONE COMPLETATA v3.0"
+echo "   SINCRONIZZAZIONE COMPLETATA v3.1"
 echo "======================================="
 echo -e "${NC}"
 echo "Directory progetto: $PROJECT_DIR"
@@ -347,7 +361,8 @@ echo ""
 echo "File sincronizzati:"
 for file in prerequisites.sh deploy.sh test.sh sync-devops-config.sh; do
     if [ -f "$HOME/devops-pipeline-fase-1/$file" ]; then
-        local size=$(wc -l < "$HOME/devops-pipeline-fase-1/$file")
+        # Fix: rimossa variabile local
+        size=$(wc -l < "$HOME/devops-pipeline-fase-1/$file")
         echo "  ✓ $file ($size righe)"
     fi
 done
@@ -360,7 +375,7 @@ echo "3. ./deploy.sh"
 echo "4. ./test.sh"
 echo ""
 
-print_success "Sync v3.0 completato con successo!"
+print_success "Sync v3.1 completato con successo!"
 print_status $GREEN "Sistema pronto per operazioni DevOps"
 
 exit 0
