@@ -129,17 +129,49 @@ export class CustomerController {
             const { id } = req.params;
             const customerRepository = AppDataSource.getRepository(Customer);
             
-            const customer = await customerRepository.findOne({ where: { id: Number(id) } });
+            // Trova il customer con le relazioni per verifica
+            const customer = await customerRepository.findOne({ 
+                where: { id: Number(id) },
+                relations: ['opportunities', 'interactions']
+            });
+            
             if (!customer) {
                 return res.status(404).json({ message: 'Cliente non trovato' });
             }
 
+            // Log per debug
+            console.log(`Eliminando cliente ID ${id}:`, {
+                name: customer.name,
+                opportunities: customer.opportunities?.length || 0,
+                interactions: customer.interactions?.length || 0
+            });
+
+            // Rimuovi il customer (cascade dovrebbe gestire le relazioni)
             await customerRepository.remove(customer);
             
-            res.json({ message: 'Cliente eliminato con successo' });
+            res.json({ 
+                message: 'Cliente eliminato con successo',
+                deletedCustomer: {
+                    id: customer.id,
+                    name: customer.name
+                }
+            });
         } catch (error) {
             console.error('Errore nell\'eliminazione cliente:', error);
-            res.status(500).json({ message: 'Errore interno del server' });
+            
+            // Log più dettagliato per debug
+            if (error instanceof Error) {
+                console.error('Error details:', {
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack
+                });
+            }
+            
+            res.status(500).json({ 
+                message: 'Errore nell\'eliminazione cliente',
+                details: process.env.NODE_ENV === 'development' ? error : undefined
+            });
         }
     }
 
