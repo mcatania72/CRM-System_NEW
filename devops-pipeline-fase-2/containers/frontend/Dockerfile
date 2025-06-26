@@ -12,7 +12,7 @@ COPY frontend/package*.json ./
 # Install dependencies
 RUN npm ci
 
-# Copy source code
+# Copy source code and configs
 COPY frontend/src ./src
 COPY frontend/public ./public
 COPY frontend/index.html ./
