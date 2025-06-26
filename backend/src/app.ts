@@ -26,12 +26,14 @@ const limiter = rateLimit({
 app.use(helmet());
 app.use(limiter);
 
-// CORS
+// CORS - Supporta sia dev che preview mode
 app.use(cors({
     origin: [
         process.env.FRONTEND_URL || 'http://localhost:3000',
         'http://localhost:4173', // Vite preview
-        'http://localhost:3000'   // Vite dev
+        'http://localhost:3000',   // Vite dev
+        'http://192.168.1.29:4173', // VM access preview
+        'http://192.168.1.29:3000'  // VM access dev
     ],
     credentials: true
 }));
@@ -84,7 +86,7 @@ AppDataSource.initialize()
         // Crea utente admin di default se non esiste
         await createDefaultAdmin();
         
-        app.listen(PORT, () => {
+        app.listen(PORT, '0.0.0.0', () => {
             console.log(`Server in esecuzione sulla porta ${PORT}`);
             console.log(`Health check: http://localhost:${PORT}/api/health`);
         });
