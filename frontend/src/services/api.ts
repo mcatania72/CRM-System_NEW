@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+// Fix: usa il proxy Vite invece di localhost diretto
+const API_BASE_URL = '/api'; // Usa il proxy Vite invece di URL assoluto
 
 // Configurazione axios
 const api = axios.create({
