@@ -6,8 +6,8 @@ WORKDIR /app
 # Copy package files
 COPY frontend/ ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install dependencies (use npm install if no package-lock.json)
+RUN if [ -f "package-lock.json" ]; then npm ci --omit=dev; else npm install --omit=dev; fi
 
 # Build React application
 RUN npm run build
