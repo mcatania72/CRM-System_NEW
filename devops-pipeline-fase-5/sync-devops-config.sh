@@ -2,10 +2,10 @@
 
 # ============================================
 # CRM System - DevOps Sync Script v5.0
-# FASE 5: Testing Avanzato
+# FASE 5: Testing Avanzato (FIXED)
 # ============================================
 
-set -e  # Exit on any error
+# NO set -e per gestire meglio gli errori
 
 # Color codes for output
 RED='\033[0;31m'
@@ -58,20 +58,25 @@ if [[ -d "./testing" ]]; then
     mv testing "$BACKUP_DIR"
 fi
 
-# Create necessary directories
+# Create necessary directories - FIXED VERSION
 log_info "Creazione struttura directory FASE 5..."
-mkdir -p {
-    testing/{unit,integration,e2e,performance,contracts},
-    testing/unit/{backend-tests,frontend-tests},
-    testing/integration/{api-tests,database-tests},
-    testing/e2e/{tests,fixtures,screenshots},
-    testing/performance/{scripts,reports},
-    testing/contracts/{pact,schemas},
-    config,
-    jenkins,
-    reports/{coverage,test-results,performance},
-    scripts
-}
+
+# Create base directories first
+mkdir -p testing config jenkins reports scripts
+mkdir -p deploy-testing test-advanced
+
+# Create testing subdirectories
+mkdir -p testing/unit testing/integration testing/e2e testing/performance testing/contracts testing/config
+mkdir -p testing/unit/backend-tests testing/unit/frontend-tests
+mkdir -p testing/integration/api-tests testing/integration/database-tests
+mkdir -p testing/e2e/tests testing/e2e/fixtures testing/e2e/screenshots
+mkdir -p testing/performance/scripts testing/performance/reports
+mkdir -p testing/contracts/pact testing/contracts/schemas
+
+# Create reports subdirectories
+mkdir -p reports/coverage reports/test-results reports/performance
+
+log_success "✅ Struttura directory creata"
 
 # Repository and branch info
 REPO_URL="https://raw.githubusercontent.com/mcatania72/CRM-System/main"
@@ -112,35 +117,48 @@ download_file "$REPO_URL/$FASE_DIR/prerequisites-testing.sh" "./prerequisites-te
 download_file "$REPO_URL/$FASE_DIR/deploy-testing.sh" "./deploy-testing.sh"
 download_file "$REPO_URL/$FASE_DIR/test-advanced.sh" "./test-advanced.sh"
 
+# Download deploy-testing modules
+log_info "=== Scaricamento Deploy-Testing Modules ==="
+download_file "$REPO_URL/$FASE_DIR/deploy-testing/deploy-testing-prerequisites.sh" "./deploy-testing/deploy-testing-prerequisites.sh"
+download_file "$REPO_URL/$FASE_DIR/deploy-testing/deploy-testing-environment.sh" "./deploy-testing/deploy-testing-environment.sh"
+download_file "$REPO_URL/$FASE_DIR/deploy-testing/deploy-testing-services.sh" "./deploy-testing/deploy-testing-services.sh"
+download_file "$REPO_URL/$FASE_DIR/deploy-testing/deploy-testing-stop-services.sh" "./deploy-testing/deploy-testing-stop-services.sh"
+download_file "$REPO_URL/$FASE_DIR/deploy-testing/deploy-testing-status.sh" "./deploy-testing/deploy-testing-status.sh"
+download_file "$REPO_URL/$FASE_DIR/deploy-testing/deploy-testing-smoke-tests.sh" "./deploy-testing/deploy-testing-smoke-tests.sh"
+download_file "$REPO_URL/$FASE_DIR/deploy-testing/deploy-testing-cleanup.sh" "./deploy-testing/deploy-testing-cleanup.sh"
+
+# Download test-advanced modules
+log_info "=== Scaricamento Test-Advanced Modules ==="
+download_file "$REPO_URL/$FASE_DIR/test-advanced/test-unit.sh" "./test-advanced/test-unit.sh"
+download_file "$REPO_URL/$FASE_DIR/test-advanced/test-integration.sh" "./test-advanced/test-integration.sh"
+download_file "$REPO_URL/$FASE_DIR/test-advanced/test-e2e.sh" "./test-advanced/test-e2e.sh"
+download_file "$REPO_URL/$FASE_DIR/test-advanced/test-performance.sh" "./test-advanced/test-performance.sh"
+download_file "$REPO_URL/$FASE_DIR/test-advanced/test-security.sh" "./test-advanced/test-security.sh"
+download_file "$REPO_URL/$FASE_DIR/test-advanced/generate-report.sh" "./test-advanced/generate-report.sh"
+
 # Download configuration files
 log_info "=== Scaricamento Configurazioni ==="
 download_file "$REPO_URL/$FASE_DIR/config/jest.config.js" "./config/jest.config.js"
-download_file "$REPO_URL/$FASE_DIR/config/vitest.config.ts" "./config/vitest.config.ts"
-download_file "$REPO_URL/$FASE_DIR/config/playwright.config.ts" "./config/playwright.config.ts"
-download_file "$REPO_URL/$FASE_DIR/config/artillery.yml" "./config/artillery.yml"
-download_file "$REPO_URL/$FASE_DIR/config/lighthouse.json" "./config/lighthouse.json"
+download_file "$REPO_URL/$FASE_DIR/config/playwright.config.js" "./config/playwright.config.js"
+download_file "$REPO_URL/$FASE_DIR/config/artillery.config.yml" "./config/artillery.config.yml"
 
-# Download Jenkins pipeline
-log_info "=== Scaricamento Jenkins Pipeline ==="
-download_file "$REPO_URL/$FASE_DIR/jenkins/Jenkinsfile.testing" "./jenkins/Jenkinsfile.testing"
-
-# Download test templates
-log_info "=== Scaricamento Test Templates ==="
-download_file "$REPO_URL/$FASE_DIR/testing/unit/backend-tests/example.test.js" "./testing/unit/backend-tests/example.test.js" optional
-download_file "$REPO_URL/$FASE_DIR/testing/unit/frontend-tests/example.test.ts" "./testing/unit/frontend-tests/example.test.ts" optional
-download_file "$REPO_URL/$FASE_DIR/testing/integration/api-tests/auth.test.js" "./testing/integration/api-tests/auth.test.js" optional
-download_file "$REPO_URL/$FASE_DIR/testing/e2e/tests/login.spec.ts" "./testing/e2e/tests/login.spec.ts" optional
-download_file "$REPO_URL/$FASE_DIR/testing/performance/scripts/load-test.yml" "./testing/performance/scripts/load-test.yml" optional
+# Download testing structure
+log_info "=== Scaricamento Testing Structure ==="
+download_file "$REPO_URL/$FASE_DIR/testing/config/jest.setup.js" "./testing/config/jest.setup.js"
+download_file "$REPO_URL/$FASE_DIR/testing/unit/sample.test.js" "./testing/unit/sample.test.js"
+download_file "$REPO_URL/$FASE_DIR/testing/e2e/sample.spec.js" "./testing/e2e/sample.spec.js"
 
 # Download utility scripts
 log_info "=== Scaricamento Script di Utilità ==="
-download_file "$REPO_URL/$FASE_DIR/scripts/setup-test-data.sh" "./scripts/setup-test-data.sh" optional
+download_file "$REPO_URL/$FASE_DIR/scripts/setup-test-data.sh" "./scripts/setup-test-data.sh"
 download_file "$REPO_URL/$FASE_DIR/scripts/generate-reports.sh" "./scripts/generate-reports.sh" optional
 download_file "$REPO_URL/$FASE_DIR/scripts/cleanup-tests.sh" "./scripts/cleanup-tests.sh" optional
 
 # Set executable permissions
 log_info "Impostazione permessi eseguibili..."
 chmod +x *.sh 2>/dev/null || true
+chmod +x deploy-testing/*.sh 2>/dev/null || true
+chmod +x test-advanced/*.sh 2>/dev/null || true
 chmod +x scripts/*.sh 2>/dev/null || true
 
 # Create .gitignore for testing
@@ -181,7 +199,9 @@ CRITICAL_FILES=(
     "deploy-testing.sh"
     "test-advanced.sh"
     "config/jest.config.js"
-    "config/playwright.config.ts"
+    "config/playwright.config.js"
+    "deploy-testing/deploy-testing-prerequisites.sh"
+    "test-advanced/test-unit.sh"
 )
 
 MISSING_FILES=0
@@ -232,13 +252,14 @@ if [[ $MISSING_FILES -eq 0 ]]; then
     echo "Prossimi passi:"
     echo "1. ./prerequisites-testing.sh    # Installa testing tools"
     echo "2. ./deploy-testing.sh start     # Avvia testing pipeline"
-    echo "3. ./test-advanced.sh           # Esegui test suite completa"
+    echo "3. ./test-advanced.sh all        # Esegui test suite completa"
     echo ""
     echo "Per test specifici:"
     echo "• ./test-advanced.sh unit        # Unit tests"
     echo "• ./test-advanced.sh integration # Integration tests"
     echo "• ./test-advanced.sh e2e         # E2E tests"
     echo "• ./test-advanced.sh performance # Performance tests"
+    echo "• ./test-advanced.sh security    # Security tests"
 else
     log_error "❌ $MISSING_FILES file critici mancanti. Riprovare la sincronizzazione."
     exit 1
