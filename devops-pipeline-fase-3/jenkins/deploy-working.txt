@@ -1,0 +1,45 @@
+        stage('Deploy to Development') {
+            steps {
+                script {
+                    echo "=== DEPLOY: Development Environment ==="
+                    sh '''
+                        echo "Stopping existing containers..."
+                        docker stop crm-backend crm-frontend 2>/dev/null || echo "No containers to stop"
+                        docker rm crm-backend crm-frontend 2>/dev/null || echo "No containers to remove"
+                        
+                        echo "Creating network for container communication..."
+                        docker network create crm-network 2>/dev/null || echo "Network already exists"
+                        
+                        echo "Starting updated containers with external IP binding..."
+                        
+                        # Start backend container with external IP binding
+                        docker run -d \
+                            --name crm-backend \
+                            --network crm-network \
+                            -p 192.168.1.29:3001:3001 \
+                            -e NODE_ENV=production \
+                            --restart unless-stopped \
+                            crm-system-backend:latest
+                        
+                        # Start frontend container with external IP binding
+                        docker run -d \
+                            --name crm-frontend \
+                            --network crm-network \
+                            -p 192.168.1.29:3000:80 \
+                            --restart unless-stopped \
+                            crm-system-frontend:latest
+                        
+                        echo "Waiting for containers to be ready..."
+                        sleep 30
+                        
+                        # Verify containers are running
+                        echo "Container status:"
+                        docker ps --filter name=crm- --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"
+                        
+                        echo "✅ Deployment to development completed"
+                        echo "🌐 Application accessible at: http://192.168.1.29:3000"
+                        echo "🔌 Backend API accessible at: http://192.168.1.29:3001"
+                    '''
+                }
+            }
+        }
