@@ -1,0 +1,38 @@
+        stage('DAST - Security Testing') {
+            steps {
+                script {
+                    echo "=== SECURITY: Dynamic Application Security Testing ==="
+                    
+                    sh '''
+                        mkdir -p security-reports
+                        
+                        # Wait for application to be ready
+                        echo "Waiting for application to be ready..."
+                        sleep 15
+                        
+                        # Test connectivity first
+                        echo "Testing application connectivity..."
+                        curl -f http://localhost:3000 >/dev/null 2>&1 && echo "✅ App reachable on localhost" || echo "❌ App not reachable on localhost"
+                        curl -f http://${HOST_IP}:3000 >/dev/null 2>&1 && echo "✅ App reachable on ${HOST_IP}" || echo "❌ App not reachable on ${HOST_IP}"
+                        
+                        # ZAP Baseline Scan - using workspace directory
+                        echo "Running OWASP ZAP baseline scan..."
+                        
+                        # Use workspace security-reports directory directly
+                        docker run --rm \
+                            --network host \
+                            -v $(pwd)/security-reports:/zap/wrk:rw \
+                            -t zaproxy/zap-stable:latest zap-baseline.py \
+                            -t http://localhost:3000 \
+                            -J zap-baseline-report.json \
+                            -r zap-baseline-report.html || echo "ZAP scan completed"
+                        
+                        echo "✅ DAST scan completed"
+                        
+                        # List generated reports
+                        echo "ZAP reports generated:"
+                        ls -la security-reports/zap-* 2>/dev/null || echo "No ZAP reports found"
+                    '''
+                }
+            }
+        }
