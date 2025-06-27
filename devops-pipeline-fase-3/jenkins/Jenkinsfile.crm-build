@@ -329,7 +329,7 @@ EOF
                         
                         # Verify containers are running
                         echo "Container status:"
-                        docker ps --filter name=crm- --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"
+                        docker ps --filter name=crm- --format "table {{.Names}}\\\\t{{.Status}}\\\\t{{.Ports}}"
                         
                         echo "✅ Deployment to development completed"
                         echo "🌐 Application accessible at: http://192.168.1.29:3000"
@@ -345,7 +345,9 @@ EOF
                     echo "=== SECURITY: Dynamic Application Security Testing ==="
                     
                     sh '''
+                        # Fix permissions for ZAP reports BEFORE running
                         mkdir -p security-reports
+                        chmod 777 security-reports
                         
                         # Wait for application to be ready
                         echo "Waiting for application to be ready..."
@@ -356,23 +358,28 @@ EOF
                         curl -f http://192.168.1.29:3000 >/dev/null 2>&1 && echo "✅ App reachable on 192.168.1.29" || echo "❌ App not reachable on 192.168.1.29"
                         curl -f http://${HOST_IP}:3000 >/dev/null 2>&1 && echo "✅ App reachable on ${HOST_IP}" || echo "❌ App not reachable on ${HOST_IP}"
                         
-                        # ZAP Baseline Scan - using correct target IP
+                        # ZAP Baseline Scan - FIX PERMISSIONS ISSUE
                         echo "Running OWASP ZAP baseline scan..."
                         
-                        # Use workspace security-reports directory directly
+                        # Use Docker with proper user and permissions
                         docker run --rm \
                             --network host \
+                            --user $(id -u):$(id -g) \
                             -v $(pwd)/security-reports:/zap/wrk:rw \
                             -t zaproxy/zap-stable:latest zap-baseline.py \
                             -t http://192.168.1.29:3000 \
                             -J zap-baseline-report.json \
-                            -r zap-baseline-report.html || echo "ZAP scan completed"
+                            -r zap-baseline-report.html \
+                            --hook=/zap/auth_hook.py \
+                            -z "-config api.addrs.addr.name=.* -config api.addrs.addr.regex=true" \
+                            || echo "ZAP scan completed with findings"
                         
                         echo "✅ DAST scan completed"
                         
                         # List generated reports
                         echo "ZAP reports generated:"
-                        ls -la security-reports/zap-* 2>/dev/null || echo "No ZAP reports found"
+                        ls -la security-reports/zap-* 2>/dev/null || echo "ZAP reports may be in different location"
+                        ls -la security-reports/ 2>/dev/null || echo "No security reports directory"
                     '''
                 }
             }
