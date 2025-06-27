@@ -1,0 +1,7 @@
+                        # Start backend container
+                        docker run -d \
+                            --name crm-backend \
+                            -p 3001:3001 \
+                            -e NODE_ENV=production \
+                            --restart unless-stopped \
+                            crm-system-backend:latest
