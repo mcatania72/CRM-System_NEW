@@ -8,8 +8,10 @@
     "dev": "ts-node src/app.ts",
     "build": "tsc",
     "test": "jest",
-    "test:watch": "jest --watch",
+    "test:watch": "jest --watch", 
     "test:coverage": "jest --coverage",
+    "test:security": "npm audit && echo 'Backend security tests passed'",
+    "test:ci": "npm run test && npm run test:security",
     "typeorm": "typeorm-ts-node-commonjs"
   },
   "dependencies": {
