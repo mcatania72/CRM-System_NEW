@@ -302,20 +302,25 @@ EOF
                         docker stop crm-backend crm-frontend 2>/dev/null || echo "No containers to stop"
                         docker rm crm-backend crm-frontend 2>/dev/null || echo "No containers to remove"
                         
-                        echo "Starting updated containers..."
+                        echo "Creating network for container communication..."
+                        docker network create crm-network 2>/dev/null || echo "Network already exists"
                         
-                        # Start backend container WITHOUT problematic volume mount
+                        echo "Starting updated containers with external IP binding..."
+                        
+                        # Start backend container with external IP binding
                         docker run -d \
                             --name crm-backend \
-                            -p 3001:3001 \
+                            --network crm-network \
+                            -p 192.168.1.29:3001:3001 \
                             -e NODE_ENV=production \
                             --restart unless-stopped \
                             crm-system-backend:latest
                         
-                        # Start frontend container  
+                        # Start frontend container with external IP binding
                         docker run -d \
                             --name crm-frontend \
-                            -p 3000:80 \
+                            --network crm-network \
+                            -p 192.168.1.29:3000:80 \
                             --restart unless-stopped \
                             crm-system-frontend:latest
                         
@@ -327,6 +332,8 @@ EOF
                         docker ps --filter name=crm- --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"
                         
                         echo "✅ Deployment to development completed"
+                        echo "🌐 Application accessible at: http://192.168.1.29:3000"
+                        echo "🔌 Backend API accessible at: http://192.168.1.29:3001"
                     '''
                 }
             }
@@ -346,10 +353,10 @@ EOF
                         
                         # Test connectivity first
                         echo "Testing application connectivity..."
-                        curl -f http://localhost:3000 >/dev/null 2>&1 && echo "✅ App reachable on localhost" || echo "❌ App not reachable on localhost"
+                        curl -f http://192.168.1.29:3000 >/dev/null 2>&1 && echo "✅ App reachable on 192.168.1.29" || echo "❌ App not reachable on 192.168.1.29"
                         curl -f http://${HOST_IP}:3000 >/dev/null 2>&1 && echo "✅ App reachable on ${HOST_IP}" || echo "❌ App not reachable on ${HOST_IP}"
                         
-                        # ZAP Baseline Scan - using workspace directory
+                        # ZAP Baseline Scan - using correct target IP
                         echo "Running OWASP ZAP baseline scan..."
                         
                         # Use workspace security-reports directory directly
@@ -357,7 +364,7 @@ EOF
                             --network host \
                             -v $(pwd)/security-reports:/zap/wrk:rw \
                             -t zaproxy/zap-stable:latest zap-baseline.py \
-                            -t http://localhost:3000 \
+                            -t http://192.168.1.29:3000 \
                             -J zap-baseline-report.json \
                             -r zap-baseline-report.html || echo "ZAP scan completed"
                         
@@ -433,18 +440,18 @@ EOF
                     sh '''
                         echo "Running smoke tests..."
                         
-                        # Test frontend
-                        if curl -f http://localhost:3000 >/dev/null 2>&1; then
+                        # Test frontend with external IP
+                        if curl -f http://192.168.1.29:3000 >/dev/null 2>&1; then
                             echo "✅ Frontend health check passed"
                         else
                             echo "❌ Frontend health check failed"
                             exit 1
                         fi
                         
-                        # Test backend API with retry
+                        # Test backend API with retry and external IP
                         echo "Testing backend API with retry..."
                         for i in {1..5}; do
-                            if curl -f http://localhost:3001/api/health >/dev/null 2>&1; then
+                            if curl -f http://192.168.1.29:3001/api/health >/dev/null 2>&1; then
                                 echo "✅ Backend API health check passed"
                                 break
                             else
@@ -456,6 +463,19 @@ EOF
                                 fi
                             fi
                         done
+                        
+                        # Test login API
+                        echo "Testing login API..."
+                        LOGIN_RESPONSE=$(curl -s -X POST http://192.168.1.29:3000/api/auth/login \
+                            -H "Content-Type: application/json" \
+                            -d '{"email":"admin@crm.local","password":"admin123"}')
+                        
+                        if echo "$LOGIN_RESPONSE" | grep -q '"token"'; then
+                            echo "✅ Login API test passed"
+                        else
+                            echo "❌ Login API test failed"
+                            exit 1
+                        fi
                         
                         echo "✅ All smoke tests passed"
                     '''
@@ -484,12 +504,13 @@ EOF
             }
         }
         success {
-            echo "🎉 Build completed successfully with security scanning!"
+            echo "🎉 BUILD SUCCESS! CRM System deployed with security scanning!"
             echo "📊 Check SonarQube dashboard: http://localhost:9000"
             echo "🛡️ Security reports available in build artifacts"
             echo "🌐 Application available at:"
-            echo "   Frontend: http://localhost:3000"
-            echo "   Backend API: http://localhost:3001/api"
+            echo "   Frontend: http://192.168.1.29:3000"
+            echo "   Backend API: http://192.168.1.29:3001"
+            echo "   Login: admin@crm.local / admin123"
         }
         failure {
             echo "❌ Build failed. Check logs for details."
