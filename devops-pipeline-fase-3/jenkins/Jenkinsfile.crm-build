@@ -153,6 +153,7 @@ pipeline {
                 script {
                     echo "=== SECURITY: Static Application Security Testing ==="
                     
+                    // Check if SonarQube is running and configure analysis
                     sh '''
                         echo "Starting SonarQube analysis..."
                         
@@ -171,8 +172,13 @@ sonar.javascript.lcov.reportPaths=backend/coverage/lcov.info,frontend/coverage/l
 sonar.typescript.lcov.reportPaths=backend/coverage/lcov.info,frontend/coverage/lcov.info
 sonar.host.url=http://localhost:9000
 EOF
+                            echo "✅ SonarQube project configuration created"
+                        else
+                            echo "❌ SonarQube not available"
+                            exit 1
+                        fi
                     '''
-                            
+                    
                     // Try local scanner first, fallback to Docker with credentials
                     if (sh(script: 'command -v sonar-scanner', returnStatus: true) == 0) {
                         echo "Using local sonar-scanner with withSonarQubeEnv"
