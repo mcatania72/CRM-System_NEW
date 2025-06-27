@@ -3,6 +3,7 @@
 # =======================================
 #   Deploy Testing - Simple BE/FE Restart
 #   FASE 5: Focus on Backend/Frontend Only
+#   VERSION 2: Auto-detect actual ports
 # =======================================
 
 # NO set -e per gestire meglio gli errori
@@ -38,7 +39,7 @@ log_action() {
 print_header() {
     echo "======================================="
     echo "   Simple Backend/Frontend Restart"
-    echo "   FASE 5: Focus on BE/FE Only"
+    echo "   FASE 5: Auto-Detect Actual Ports"
     echo "======================================="
 }
 
@@ -102,40 +103,69 @@ start_backend() {
     done
 }
 
+# Function to detect frontend port from log
+detect_frontend_port() {
+    local log_file="$1"
+    local detected_port=""
+    
+    # Wait a bit for log to be written
+    sleep 3
+    
+    # Look for "Local: http://localhost:PORT/" in log
+    if [ -f "$log_file" ]; then
+        detected_port=$(grep -o "Local:.*http://localhost:[0-9]*" "$log_file" | grep -o "[0-9]*" | head -1)
+    fi
+    
+    echo "$detected_port"
+}
+
 # Function to start frontend
 start_frontend() {
     log_info "=== STARTING FRONTEND ==="
     
-    local frontend_port=3100
+    local preferred_port=3100
     local backend_port=$(cat "$HOME/backend-testing.port" 2>/dev/null || echo "3101")
     
-    # Check if port is free
-    if sudo lsof -i :$frontend_port >/dev/null 2>&1; then
-        log_warning "Port $frontend_port occupied, trying to free it..."
-        sudo lsof -ti :$frontend_port | xargs -r sudo kill -9 2>/dev/null
-        sleep 2
-    fi
-    
-    log_action "Starting frontend on port $frontend_port (backend: $backend_port)..."
+    log_action "Starting frontend (preferred port: $preferred_port, backend: $backend_port)..."
     
     cd "$HOME/devops/CRM-System/frontend" || { log_error "Cannot cd to frontend"; return 1; }
     
-    # Start frontend with explicit port configuration
-    VITE_PORT=$frontend_port PORT=$frontend_port VITE_API_BASE_URL="http://localhost:$backend_port/api" npm run dev > "$HOME/frontend-testing.log" 2>&1 &
+    # Start frontend and let Vite choose port if needed
+    VITE_PORT=$preferred_port PORT=$preferred_port VITE_API_BASE_URL="http://localhost:$backend_port/api" npm run dev > "$HOME/frontend-testing.log" 2>&1 &
     FRONTEND_PID=$!
     echo $FRONTEND_PID > "$HOME/frontend-testing.pid"
-    echo $frontend_port > "$HOME/frontend-testing.port"
     
-    # Wait and test
-    log_info "Waiting for frontend startup..."
+    # Wait and detect actual port
+    log_info "Waiting for frontend startup and detecting actual port..."
+    local actual_port=""
+    
     for i in {1..15}; do
         sleep 2
-        if curl -s "http://localhost:$frontend_port" >/dev/null 2>&1; then
-            log_success "Frontend started successfully on port $frontend_port"
+        
+        # Try to detect port from log
+        actual_port=$(detect_frontend_port "$HOME/frontend-testing.log")
+        
+        if [ -n "$actual_port" ]; then
+            # Test if frontend responds on detected port
+            if curl -s "http://localhost:$actual_port" >/dev/null 2>&1; then
+                echo $actual_port > "$HOME/frontend-testing.port"
+                log_success "Frontend started successfully on port $actual_port"
+                if [ "$actual_port" != "$preferred_port" ]; then
+                    log_warning "Frontend started on $actual_port instead of preferred $preferred_port"
+                fi
+                return 0
+            fi
+        fi
+        
+        # Also try preferred port
+        if curl -s "http://localhost:$preferred_port" >/dev/null 2>&1; then
+            echo $preferred_port > "$HOME/frontend-testing.port"
+            log_success "Frontend started successfully on port $preferred_port"
             return 0
         fi
+        
         if [ $i -eq 15 ]; then
-            log_error "Frontend failed to start"
+            log_error "Frontend failed to start or detect port"
             log_error "Check logs: cat $HOME/frontend-testing.log"
             log_error "Last 10 lines of log:"
             tail -10 "$HOME/frontend-testing.log" 2>/dev/null || echo "No log file found"
@@ -166,8 +196,23 @@ show_status() {
         log_success "Frontend: http://localhost:$frontend_port ✅"
     else
         log_error "Frontend: http://localhost:$frontend_port ❌"
+        
+        # Try common ports if detection failed
+        log_info "Scanning common ports for frontend..."
+        for port in 3000 3001 3002 3100 3200; do
+            if curl -s "http://localhost:$port" >/dev/null 2>&1; then
+                log_warning "Found frontend on port $port instead!"
+                echo $port > "$HOME/frontend-testing.port"
+                frontend_port=$port
+                break
+            fi
+        done
     fi
     
+    echo ""
+    echo "Actual URLs:"
+    echo "• Backend:  http://localhost:$backend_port"
+    echo "• Frontend: http://localhost:$frontend_port"
     echo ""
     echo "Next steps:"
     echo "• ./scripts/setup-test-data.sh          # Setup test data"
@@ -175,14 +220,16 @@ show_status() {
     echo "• ./test-advanced.sh all                # Run all tests"
     echo ""
     
-    # Save simple environment
+    # Save actual environment
     cat > "$HOME/devops-pipeline-fase-5/.env.testing" << EOF
-# Simple Testing Environment
+# Testing Environment (Auto-Detected Ports)
 BACKEND_PORT=$backend_port
 FRONTEND_PORT=$frontend_port
 BACKEND_URL=http://localhost:$backend_port
 FRONTEND_URL=http://localhost:$frontend_port
 EOF
+    
+    log_success "Environment saved with actual ports: BE=$backend_port, FE=$frontend_port"
 }
 
 # Main execution
