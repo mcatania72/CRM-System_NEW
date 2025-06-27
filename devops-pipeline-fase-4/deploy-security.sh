@@ -257,7 +257,7 @@ pipeline {
                     // Run OWASP ZAP baseline scan
                     sh '''
                         docker run --rm -v $(pwd)/security-reports:/zap/wrk:rw \
-                        -t owasp/zap2docker-stable:latest zap-baseline.py \
+                        -t zaproxy/zap-stable:latest zap-baseline.py \
                         -t http://host.docker.internal:3000 \
                         -J zap-baseline-report.json || true
                     '''
@@ -343,9 +343,11 @@ show_status() {
         echo "🔴 SonarQube: NON ATTIVO"
     fi
     
-    # Docker status
-    if docker images | grep -q "owasp/zap2docker-stable"; then
-        echo "🟢 OWASP ZAP: Docker image presente"
+    # Docker status - FIX: Check for both possible image names
+    if docker images | grep -q "zaproxy/zap-stable"; then
+        echo "🟢 OWASP ZAP: Docker image presente (zaproxy/zap-stable)"
+    elif docker images | grep -q "owasp/zap2docker-stable"; then
+        echo "🟢 OWASP ZAP: Docker image presente (owasp/zap2docker-stable)"
     else
         echo "🔴 OWASP ZAP: Docker image mancante"
     fi
