@@ -64,30 +64,83 @@ check_prerequisite() {
     fi
 }
 
-# Install SonarQube Community Edition
+# Install SonarQube Community Edition with robust error handling
 install_sonarqube() {
     log_info "Installazione SonarQube Community Edition..."
     
     # Check if already installed
-    if [ -d "$HOME/sonarqube" ]; then
+    if [ -d "$HOME/sonarqube" ] && [ -x "$HOME/sonarqube/bin/linux-x86-64/sonar.sh" ]; then
         log_success "SonarQube già installato in $HOME/sonarqube"
         return 0
     fi
     
-    # Download and install
+    # Clean any partial installation
+    if [ -d "$HOME/sonarqube" ]; then
+        log_info "Rimozione installazione SonarQube parziale..."
+        rm -rf "$HOME/sonarqube"
+    fi
+    
+    # Remove any existing zip files
+    rm -f "$HOME/sonarqube*.zip" 2>/dev/null || true
+    
+    # Download with progress and error handling
+    log_info "Download SonarQube ${SONARQUBE_VERSION}..."
     cd "$HOME"
-    wget -q "https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-${SONARQUBE_VERSION}.zip" -O sonarqube.zip
-    unzip -q sonarqube.zip
-    mv "sonarqube-${SONARQUBE_VERSION}" sonarqube
-    rm sonarqube.zip
+    
+    local download_url="https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-${SONARQUBE_VERSION}.zip"
+    
+    if ! wget --progress=dot:giga --timeout=300 --tries=3 "$download_url" -O sonarqube.zip; then
+        log_error "Fallito download di SonarQube da $download_url"
+        return 1
+    fi
+    
+    # Verify download
+    if [ ! -f "sonarqube.zip" ] || [ ! -s "sonarqube.zip" ]; then
+        log_error "File SonarQube zip non valido o vuoto"
+        rm -f sonarqube.zip
+        return 1
+    fi
+    
+    local zip_size=$(stat -c%s sonarqube.zip 2>/dev/null || echo "0")
+    log_info "SonarQube zip scaricato: ${zip_size} bytes"
+    
+    # Extract with error handling
+    log_info "Estrazione SonarQube (può richiedere 1-2 minuti)..."
+    if ! unzip -q sonarqube.zip; then
+        log_error "Fallita estrazione di SonarQube"
+        rm -f sonarqube.zip
+        return 1
+    fi
+    
+    # Verify extraction
+    if [ ! -d "sonarqube-${SONARQUBE_VERSION}" ]; then
+        log_error "Directory SonarQube non trovata dopo estrazione"
+        rm -f sonarqube.zip
+        return 1
+    fi
+    
+    # Rename directory
+    if ! mv "sonarqube-${SONARQUBE_VERSION}" sonarqube; then
+        log_error "Fallita rinomina directory SonarQube"
+        return 1
+    fi
+    
+    # Clean zip file
+    rm -f sonarqube.zip
     
     # Set permissions
-    chmod +x sonarqube/bin/linux-x86-64/sonar.sh
+    if [ -f "sonarqube/bin/linux-x86-64/sonar.sh" ]; then
+        chmod +x sonarqube/bin/linux-x86-64/sonar.sh
+        log_success "SonarQube installato con successo in $HOME/sonarqube"
+    else
+        log_error "File sonar.sh non trovato dopo installazione"
+        return 1
+    fi
     
-    log_success "SonarQube installato in $HOME/sonarqube"
+    return 0
 }
 
-# Install Trivy
+# Install Trivy with improved error handling
 install_trivy() {
     log_info "Installazione Trivy scanner..."
     
@@ -97,13 +150,36 @@ install_trivy() {
         return 0
     fi
     
-    # Download and install
-    wget -q "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" -O /tmp/trivy.tar.gz
-    tar -xzf /tmp/trivy.tar.gz -C /tmp
-    sudo mv /tmp/trivy /usr/local/bin/
-    rm /tmp/trivy.tar.gz
+    # Download and install with error handling
+    local trivy_url="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
     
-    log_success "Trivy installato in /usr/local/bin/trivy"
+    log_info "Download Trivy ${TRIVY_VERSION}..."
+    if ! wget -q --timeout=120 --tries=3 "$trivy_url" -O /tmp/trivy.tar.gz; then
+        log_error "Fallito download di Trivy"
+        return 1
+    fi
+    
+    if ! tar -xzf /tmp/trivy.tar.gz -C /tmp; then
+        log_error "Fallita estrazione di Trivy"
+        rm -f /tmp/trivy.tar.gz
+        return 1
+    fi
+    
+    if ! sudo mv /tmp/trivy /usr/local/bin/; then
+        log_error "Fallita installazione di Trivy in /usr/local/bin/"
+        rm -f /tmp/trivy.tar.gz
+        return 1
+    fi
+    
+    rm -f /tmp/trivy.tar.gz
+    
+    # Verify installation
+    if command -v trivy >/dev/null 2>&1; then
+        log_success "Trivy installato: $(trivy --version | head -1)"
+    else
+        log_error "Trivy non funziona dopo installazione"
+        return 1
+    fi
 }
 
 # Install OWASP ZAP
@@ -116,8 +192,13 @@ install_owasp_zap() {
         return 0
     fi
     
-    # Pull OWASP ZAP Docker image
-    docker pull owasp/zap2docker-stable:latest
+    # Pull OWASP ZAP Docker image with timeout
+    log_info "Download OWASP ZAP Docker image..."
+    if ! timeout 300 docker pull owasp/zap2docker-stable:latest; then
+        log_error "Fallito download OWASP ZAP Docker image"
+        return 1
+    fi
+    
     log_success "OWASP ZAP Docker image scaricata"
 }
 
@@ -131,8 +212,12 @@ install_nodejs_security() {
         return 0
     fi
     
-    # Install security linting tools globally
-    npm install -g npm-audit-html retire eslint-plugin-security license-checker
+    # Install security linting tools globally with error handling
+    log_info "Installazione npm security tools globali..."
+    if ! npm install -g npm-audit-html retire eslint-plugin-security license-checker; then
+        log_error "Fallita installazione npm security tools"
+        return 1
+    fi
     
     log_success "Tool security Node.js installati"
 }
@@ -141,21 +226,29 @@ install_nodejs_security() {
 install_git_secrets() {
     log_info "Installazione git-secrets..."
     
+    # Check if already installed
     if command -v git >/dev/null 2>&1 && git secrets --version >/dev/null 2>&1; then
         log_success "git-secrets già installato"
         return 0
     fi
     
-    # Clone and install
+    # Clone and install with error handling
     if [ ! -d "$HOME/git-secrets" ]; then
+        log_info "Cloning git-secrets repository..."
         cd "$HOME"
-        git clone https://github.com/awslabs/git-secrets.git
-        cd git-secrets
-        sudo make install
-        log_success "git-secrets installato"
-    else
-        log_success "git-secrets directory già presente"
+        if ! git clone https://github.com/awslabs/git-secrets.git; then
+            log_error "Fallito clone di git-secrets repository"
+            return 1
+        fi
     fi
+    
+    cd "$HOME/git-secrets"
+    if ! sudo make install; then
+        log_error "Fallita installazione di git-secrets"
+        return 1
+    fi
+    
+    log_success "git-secrets installato"
 }
 
 # Main execution
@@ -178,13 +271,17 @@ main() {
     check_prerequisite "npm" "Node.js/npm" "echo 'Node.js deve essere installato manualmente'"
     check_prerequisite "java" "Java" "sudo apt-get install -y openjdk-17-jdk"
     
-    # Install security tools
+    # Install security tools with robust error handling
     log_info "Installazione security tools specializzati..."
-    install_sonarqube
-    install_trivy
-    install_owasp_zap
-    install_nodejs_security
-    install_git_secrets
+    
+    local install_failed=false
+    
+    # Install each tool and track failures
+    install_sonarqube || install_failed=true
+    install_trivy || install_failed=true
+    install_owasp_zap || install_failed=true
+    install_nodejs_security || install_failed=true
+    install_git_secrets || true  # Optional, don't fail on this
     
     # Create security directories
     log_info "Creazione directory security..."
@@ -199,12 +296,12 @@ main() {
     
     # Check versions
     echo "🔒 Security Tools installati:"
-    echo "- SonarQube: $(ls -d $HOME/sonarqube 2>/dev/null && echo 'Installato' || echo 'Non trovato')"
-    echo "- Trivy: $(trivy --version 2>/dev/null | head -1 || echo 'Non trovato')"
+    echo "- SonarQube: $([ -d $HOME/sonarqube ] && echo 'Installato' || echo 'MANCANTE')"
+    echo "- Trivy: $(trivy --version 2>/dev/null | head -1 || echo 'MANCANTE')"
     echo "- OWASP ZAP: $(docker images | grep owasp/zap2docker-stable | wc -l) image(s)"
-    echo "- git-secrets: $(git secrets --version 2>/dev/null || echo 'Non trovato')"
-    echo "- npm-audit-html: $(npm list -g npm-audit-html 2>/dev/null | grep npm-audit-html || echo 'Non trovato')"
-    echo "- license-checker: $(npm list -g license-checker 2>/dev/null | grep license-checker || echo 'Non trovato')"
+    echo "- git-secrets: $(git secrets --version 2>/dev/null || echo 'Non installato')"
+    echo "- npm-audit-html: $(npm list -g npm-audit-html 2>/dev/null | grep npm-audit-html >/dev/null && echo 'Installato' || echo 'Non installato')"
+    echo "- license-checker: $(npm list -g license-checker 2>/dev/null | grep license-checker >/dev/null && echo 'Installato' || echo 'Non installato')"
     
     echo ""
     echo "📊 Sistema pronto per security scanning:"
@@ -215,12 +312,22 @@ main() {
     echo "- License compliance: license-checker"
     echo "- Reports: $HOME/security-reports/"
     
-    log_success "✅ Tutti i prerequisiti per FASE 4 sono soddisfatti!"
-    
-    echo ""
-    echo "🚀 Prossimi passi:"
-    echo "1. ./deploy-security.sh start    # Deploy security pipeline"
-    echo "2. ./test-security.sh            # Test security compliance"
+    if [ "$install_failed" = "false" ]; then
+        log_success "✅ Tutti i prerequisiti per FASE 4 sono soddisfatti!"
+        echo ""
+        echo "🚀 Prossimi passi:"
+        echo "1. ./deploy-security.sh start    # Deploy security pipeline"
+        echo "2. ./test-security.sh            # Test security compliance"
+        return 0
+    else
+        log_error "❌ Alcuni prerequisiti hanno avuto problemi di installazione"
+        echo ""
+        echo "🔧 Risoluzione problemi:"
+        echo "1. Controlla il log: $LOG_FILE"
+        echo "2. Riprova: ./prerequisites-security.sh"
+        echo "3. Se persistono errori, installa manualmente i tool mancanti"
+        return 1
+    fi
 }
 
 # Execute main function
