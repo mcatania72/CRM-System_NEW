@@ -182,27 +182,43 @@ install_trivy() {
     fi
 }
 
-# Install OWASP ZAP
+# Install OWASP ZAP with correct Docker image name
 install_owasp_zap() {
     log_info "Installazione OWASP ZAP..."
     
-    # Check if already installed via Docker
-    if docker images | grep -q "owasp/zap2docker-stable"; then
-        log_success "OWASP ZAP Docker image già presente"
+    # Check multiple possible image names (Docker repository changed)
+    local zap_images=("zaproxy/zap-stable" "owasp/zap2docker-stable" "zaproxy/zap-weekly")
+    local zap_found=false
+    
+    for image in "${zap_images[@]}"; do
+        if docker images | grep -q "$image"; then
+            log_success "OWASP ZAP Docker image già presente: $image"
+            zap_found=true
+            break
+        fi
+    done
+    
+    if [ "$zap_found" = "true" ]; then
         return 0
     fi
     
-    # Pull OWASP ZAP Docker image with timeout
-    log_info "Download OWASP ZAP Docker image..."
-    if ! timeout 300 docker pull owasp/zap2docker-stable:latest; then
-        log_error "Fallito download OWASP ZAP Docker image"
-        return 1
-    fi
+    # Try to pull the correct ZAP image (new repository name)
+    log_info "Download OWASP ZAP Docker image (nuovo repository)..."
     
-    log_success "OWASP ZAP Docker image scaricata"
+    for image in "${zap_images[@]}"; do
+        log_info "Tentativo download: $image"
+        if timeout 300 docker pull "$image:latest" 2>/dev/null; then
+            log_success "OWASP ZAP Docker image scaricata: $image"
+            return 0
+        fi
+    done
+    
+    log_error "Fallito download di tutte le varianti OWASP ZAP"
+    log_warning "OWASP ZAP può essere installato manualmente con: docker pull zaproxy/zap-stable"
+    return 1
 }
 
-# Install security tools for Node.js
+# Install security tools for Node.js with proper permissions
 install_nodejs_security() {
     log_info "Installazione tool security Node.js..."
     
@@ -212,14 +228,36 @@ install_nodejs_security() {
         return 0
     fi
     
-    # Install security linting tools globally with error handling
-    log_info "Installazione npm security tools globali..."
+    # Setup npm global directory to avoid permission issues
+    log_info "Configurazione npm global directory..."
+    local npm_global_dir="$HOME/.npm-global"
+    
+    # Create npm global directory
+    mkdir -p "$npm_global_dir"
+    
+    # Configure npm to use the local directory
+    npm config set prefix "$npm_global_dir"
+    
+    # Add to PATH if not already there
+    if ! echo "$PATH" | grep -q "$npm_global_dir/bin"; then
+        export PATH="$npm_global_dir/bin:$PATH"
+        
+        # Add to .bashrc for persistence
+        if ! grep -q "npm-global/bin" "$HOME/.bashrc" 2>/dev/null; then
+            echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> "$HOME/.bashrc"
+            log_info "Aggiunto npm global path a .bashrc"
+        fi
+    fi
+    
+    # Install security linting tools globally with proper permissions
+    log_info "Installazione npm security tools in directory locale..."
     if ! npm install -g npm-audit-html retire eslint-plugin-security license-checker; then
         log_error "Fallita installazione npm security tools"
         return 1
     fi
     
-    log_success "Tool security Node.js installati"
+    log_success "Tool security Node.js installati in $npm_global_dir"
+    log_info "Riavvia il terminale o esegui: source ~/.bashrc per aggiornare PATH"
 }
 
 # Install git-secrets
@@ -231,6 +269,11 @@ install_git_secrets() {
         log_success "git-secrets già installato"
         return 0
     fi
+    
+    # Install build dependencies
+    log_info "Installazione dipendenze build per git-secrets..."
+    sudo apt-get update -qq
+    sudo apt-get install -y build-essential make
     
     # Clone and install with error handling
     if [ ! -d "$HOME/git-secrets" ]; then
@@ -275,13 +318,14 @@ main() {
     log_info "Installazione security tools specializzati..."
     
     local install_failed=false
+    local warnings=0
     
     # Install each tool and track failures
     install_sonarqube || install_failed=true
     install_trivy || install_failed=true
-    install_owasp_zap || install_failed=true
-    install_nodejs_security || install_failed=true
-    install_git_secrets || true  # Optional, don't fail on this
+    install_owasp_zap || { warnings=$((warnings + 1)); log_warning "OWASP ZAP installazione fallita - non bloccante"; }
+    install_nodejs_security || { warnings=$((warnings + 1)); log_warning "NPM Security tools installazione fallita - non bloccante"; }
+    install_git_secrets || { warnings=$((warnings + 1)); log_warning "git-secrets installazione fallita - non bloccante"; }
     
     # Create security directories
     log_info "Creazione directory security..."
@@ -296,12 +340,12 @@ main() {
     
     # Check versions
     echo "🔒 Security Tools installati:"
-    echo "- SonarQube: $([ -d $HOME/sonarqube ] && echo 'Installato' || echo 'MANCANTE')"
-    echo "- Trivy: $(trivy --version 2>/dev/null | head -1 || echo 'MANCANTE')"
-    echo "- OWASP ZAP: $(docker images | grep owasp/zap2docker-stable | wc -l) image(s)"
-    echo "- git-secrets: $(git secrets --version 2>/dev/null || echo 'Non installato')"
-    echo "- npm-audit-html: $(npm list -g npm-audit-html 2>/dev/null | grep npm-audit-html >/dev/null && echo 'Installato' || echo 'Non installato')"
-    echo "- license-checker: $(npm list -g license-checker 2>/dev/null | grep license-checker >/dev/null && echo 'Installato' || echo 'Non installato')"
+    echo "- SonarQube: $([ -d $HOME/sonarqube ] && echo '✅ Installato' || echo '❌ MANCANTE')"
+    echo "- Trivy: $(trivy --version 2>/dev/null | head -1 | sed 's/Version: /✅ /' || echo '❌ MANCANTE')"
+    echo "- OWASP ZAP: $(docker images | grep -E 'zap|zaproxy' | wc -l) image(s) $([ $(docker images | grep -E 'zap|zaproxy' | wc -l) -gt 0 ] && echo '✅' || echo '⚠️')"
+    echo "- git-secrets: $(git secrets --version 2>/dev/null | sed 's/^/✅ /' || echo '⚠️ Non installato')"
+    echo "- npm-audit-html: $(npm list -g npm-audit-html 2>/dev/null | grep npm-audit-html >/dev/null && echo '✅ Installato' || echo '⚠️ Non installato')"
+    echo "- license-checker: $(npm list -g license-checker 2>/dev/null | grep license-checker >/dev/null && echo '✅ Installato' || echo '⚠️ Non installato')"
     
     echo ""
     echo "📊 Sistema pronto per security scanning:"
@@ -313,19 +357,32 @@ main() {
     echo "- Reports: $HOME/security-reports/"
     
     if [ "$install_failed" = "false" ]; then
-        log_success "✅ Tutti i prerequisiti per FASE 4 sono soddisfatti!"
+        if [ $warnings -eq 0 ]; then
+            log_success "✅ Tutti i prerequisiti per FASE 4 sono soddisfatti!"
+        else
+            log_success "✅ Prerequisiti essenziali per FASE 4 soddisfatti (con $warnings warning)"
+        fi
         echo ""
         echo "🚀 Prossimi passi:"
         echo "1. ./deploy-security.sh start    # Deploy security pipeline"
         echo "2. ./test-security.sh            # Test security compliance"
+        
+        if [ $warnings -gt 0 ]; then
+            echo ""
+            echo "⚠️ Note sui warning:"
+            echo "- OWASP ZAP: Installazione manuale con 'docker pull zaproxy/zap-stable'"
+            echo "- NPM tools: Riavvia terminale per aggiornare PATH"
+            echo "- git-secrets: Opzionale per secret detection"
+        fi
+        
         return 0
     else
-        log_error "❌ Alcuni prerequisiti hanno avuto problemi di installazione"
+        log_error "❌ Tool essenziali mancanti - installazione fallita"
         echo ""
         echo "🔧 Risoluzione problemi:"
         echo "1. Controlla il log: $LOG_FILE"
-        echo "2. Riprova: ./prerequisites-security.sh"
-        echo "3. Se persistono errori, installa manualmente i tool mancanti"
+        echo "2. Verifica connessione internet"
+        echo "3. Riprova: ./prerequisites-security.sh"
         return 1
     fi
 }
