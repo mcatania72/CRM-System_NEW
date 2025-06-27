@@ -2,10 +2,11 @@
 
 # =============================================================================
 # CRM System - Security Test Suite
-# FASE 4: Security Baseline - ULTRA ROBUST VERSION
+# FASE 4: Security Baseline - NO SET -E VERSION
 # =============================================================================
 
-set -euo pipefail
+# RIMOSSO set -e per evitare uscita prematura su comandi che falliscono
+set -uo pipefail
 
 # Configuration
 LOG_FILE="$HOME/test-security.log"
@@ -60,31 +61,6 @@ test_warning() {
     log_warning "$test_name - $reason"
 }
 
-# Safe command check with timeout and alternative methods
-safe_command_check() {
-    local cmd="$1"
-    local timeout_sec="${2:-3}"
-    
-    # Method 1: Try which first (fastest)
-    if timeout "$timeout_sec" which "$cmd" >/dev/null 2>&1; then
-        return 0
-    fi
-    
-    # Method 2: Try direct execution with version
-    if timeout "$timeout_sec" "$cmd" --version >/dev/null 2>&1; then
-        return 0
-    fi
-    
-    # Method 3: Check if file exists in common paths
-    for path in /usr/local/bin /usr/bin /bin ~/.local/bin; do
-        if [ -x "$path/$cmd" ]; then
-            return 0
-        fi
-    done
-    
-    return 1
-}
-
 # Security Tools Tests
 test_security_tools() {
     echo "=== Test Security Tools Installation ==="
@@ -97,39 +73,30 @@ test_security_tools() {
         test_fail "SonarQube non trovato" "Directory $HOME/sonarqube mancante"
     fi
     
-    # Test Trivy - ROBUST CHECK
+    # Test Trivy - SIMPLE CHECK
     log_info "Verificando Trivy..."
-    if safe_command_check "trivy" 5; then
-        # Try to get version safely
+    if command -v trivy >/dev/null 2>&1; then
         local trivy_version=""
-        if trivy_version=$(timeout 10 trivy --version 2>/dev/null | head -1); then
-            test_pass "Trivy disponibile: $trivy_version"
-        else
-            test_pass "Trivy disponibile (versione non determinabile)"
-        fi
+        trivy_version=$(trivy --version 2>/dev/null | head -1 || echo "versione sconosciuta")
+        test_pass "Trivy disponibile: $trivy_version"
     else
         test_fail "Trivy non trovato" "Comando trivy non disponibile"
     fi
     
-    # Test OWASP ZAP Docker - Enhanced check
+    # Test OWASP ZAP Docker
     log_info "Verificando OWASP ZAP Docker..."
-    local zap_found=false
-    if timeout 15 docker images --format "table {{.Repository}}:{{.Tag}}" 2>/dev/null | grep -q "zaproxy/zap-stable"; then
+    if docker images 2>/dev/null | grep -q "zaproxy/zap-stable"; then
         test_pass "OWASP ZAP Docker image presente (zaproxy/zap-stable)"
-        zap_found=true
-    elif timeout 15 docker images --format "table {{.Repository}}:{{.Tag}}" 2>/dev/null | grep -q "owasp/zap2docker-stable"; then
+    elif docker images 2>/dev/null | grep -q "owasp/zap2docker-stable"; then
         test_pass "OWASP ZAP Docker image presente (owasp/zap2docker-stable)"
-        zap_found=true
-    fi
-    
-    if [ "$zap_found" = false ]; then
+    else
         test_fail "OWASP ZAP mancante" "Docker image non scaricata"
     fi
     
-    # Test git-secrets - SAFE CHECK
+    # Test git-secrets
     log_info "Verificando git-secrets..."
-    if safe_command_check "git" 3; then
-        if timeout 5 git secrets --version >/dev/null 2>&1; then
+    if command -v git >/dev/null 2>&1; then
+        if git secrets --version >/dev/null 2>&1; then
             test_pass "git-secrets disponibile"
         else
             test_warning "git-secrets non configurato" "Installazione opzionale"
@@ -138,10 +105,10 @@ test_security_tools() {
         test_warning "git command non disponibile" "Installazione git richiesta"
     fi
     
-    # Test npm security tools - VERY SAFE CHECK
+    # Test npm security tools
     log_info "Verificando npm security tools..."
-    if safe_command_check "npm" 3; then
-        if timeout 8 npm list -g --depth=0 2>/dev/null | grep -q "npm-audit-html"; then
+    if command -v npm >/dev/null 2>&1; then
+        if npm list -g --depth=0 2>/dev/null | grep -q "npm-audit-html"; then
             test_pass "npm-audit-html installato"
         else
             test_warning "npm-audit-html mancante" "Tool opzionale per report HTML"
@@ -156,31 +123,28 @@ test_sonarqube_service() {
     echo "=== Test SonarQube Service ==="
     log_info "Testando servizio SonarQube..."
     
-    # Test SonarQube process with timeout
-    if timeout 5 pgrep -f "sonar" > /dev/null 2>&1; then
+    # Test SonarQube process
+    if pgrep -f "sonar" > /dev/null 2>&1; then
         test_pass "SonarQube processo attivo"
     else
         test_fail "SonarQube non in esecuzione" "Nessun processo sonar trovato"
         return
     fi
     
-    # Test SonarQube web interface with timeout
-    if timeout 10 curl -s --connect-timeout 5 "http://localhost:$SONARQUBE_PORT" > /dev/null 2>&1; then
+    # Test SonarQube web interface
+    if curl -s --connect-timeout 5 --max-time 10 "http://localhost:$SONARQUBE_PORT" > /dev/null 2>&1; then
         test_pass "SonarQube web interface raggiungibile"
     else
         test_fail "SonarQube web interface non raggiungibile" "Porta $SONARQUBE_PORT non risponde"
     fi
     
-    # Test SonarQube API with timeout
+    # Test SonarQube API
     local api_response=""
-    if api_response=$(timeout 10 curl -s --connect-timeout 5 "http://localhost:$SONARQUBE_PORT/api/system/status" 2>/dev/null); then
-        if echo "$api_response" | grep -q "UP\|OK"; then
-            test_pass "SonarQube API funzionante"
-        else
-            test_warning "SonarQube API non completamente pronta" "Potrebbe essere ancora in avvio"
-        fi
+    api_response=$(curl -s --connect-timeout 5 --max-time 10 "http://localhost:$SONARQUBE_PORT/api/system/status" 2>/dev/null || echo "error")
+    if echo "$api_response" | grep -q "UP\|OK"; then
+        test_pass "SonarQube API funzionante"
     else
-        test_warning "SonarQube API timeout" "Servizio potrebbe essere ancora in avvio"
+        test_warning "SonarQube API non completamente pronta" "Potrebbe essere ancora in avvio"
     fi
 }
 
@@ -189,15 +153,17 @@ test_dependency_scanning() {
     echo "=== Test Dependency Scanning ==="
     log_info "Testando dependency scanning..."
     
-    # Test npm audit on backend with enhanced safety
+    # Test npm audit on backend
     if [ -d "$HOME/devops/CRM-System/backend" ]; then
-        cd "$HOME/devops/CRM-System/backend" || return
+        cd "$HOME/devops/CRM-System/backend"
         if [ -f "package.json" ]; then
-            if timeout 30 npm audit --audit-level info >/dev/null 2>&1; then
-                test_pass "npm audit backend eseguito"
+            # npm audit può restituire exit code non-zero se trova vulnerabilità, ma questo è normale
+            npm audit --audit-level info >/dev/null 2>&1
+            local audit_result=$?
+            if [ $audit_result -eq 0 ]; then
+                test_pass "npm audit backend - nessuna vulnerabilità"
             else
-                # npm audit returns non-zero if vulnerabilities found
-                test_warning "npm audit backend completato con vulnerabilità" "Review necessaria"
+                test_warning "npm audit backend - vulnerabilità trovate" "Review necessaria (exit code: $audit_result)"
             fi
         else
             test_warning "package.json backend non trovato" "Dependency scanning non possibile"
@@ -206,14 +172,16 @@ test_dependency_scanning() {
         test_fail "Backend directory non trovata" "$HOME/devops/CRM-System/backend mancante"
     fi
     
-    # Test npm audit on frontend with enhanced safety
+    # Test npm audit on frontend
     if [ -d "$HOME/devops/CRM-System/frontend" ]; then
-        cd "$HOME/devops/CRM-System/frontend" || return
+        cd "$HOME/devops/CRM-System/frontend"
         if [ -f "package.json" ]; then
-            if timeout 30 npm audit --audit-level info >/dev/null 2>&1; then
-                test_pass "npm audit frontend eseguito"
+            npm audit --audit-level info >/dev/null 2>&1
+            local audit_result=$?
+            if [ $audit_result -eq 0 ]; then
+                test_pass "npm audit frontend - nessuna vulnerabilità"
             else
-                test_warning "npm audit frontend completato con vulnerabilità" "Review necessaria"
+                test_warning "npm audit frontend - vulnerabilità trovate" "Review necessaria (exit code: $audit_result)"
             fi
         else
             test_warning "package.json frontend non trovato" "Dependency scanning non possibile"
@@ -228,41 +196,37 @@ test_container_security() {
     echo "=== Test Container Security ==="
     log_info "Testando container security scanning..."
     
-    # Check if containers exist safely
-    local backend_exists=false
-    local frontend_exists=false
-    
-    if timeout 10 docker images --format "{{.Repository}}" 2>/dev/null | grep -q "crm-backend"; then
-        backend_exists=true
-        if safe_command_check "trivy" 5; then
-            if timeout 60 trivy image --exit-code 1 --severity HIGH,CRITICAL crm-backend:latest >/dev/null 2>&1; then
+    # Check if containers exist
+    if docker images 2>/dev/null | grep -q "crm-backend"; then
+        if command -v trivy >/dev/null 2>&1; then
+            # Trivy restituisce exit code non-zero se trova vulnerabilità
+            trivy image --exit-code 1 --severity HIGH,CRITICAL crm-backend:latest >/dev/null 2>&1
+            local trivy_result=$?
+            if [ $trivy_result -eq 0 ]; then
                 test_pass "Container backend scan - nessuna vulnerabilità critica"
             else
-                test_warning "Container backend ha vulnerabilità" "Review necessaria"
+                test_warning "Container backend ha vulnerabilità" "Review necessaria (exit code: $trivy_result)"
             fi
         else
             test_warning "Container backend non scansionabile" "Trivy non disponibile"
         fi
+    else
+        test_warning "Container backend non trovato" "Build container prima del test"
     fi
     
-    if timeout 10 docker images --format "{{.Repository}}" 2>/dev/null | grep -q "crm-frontend"; then
-        frontend_exists=true
-        if safe_command_check "trivy" 5; then
-            if timeout 60 trivy image --exit-code 1 --severity HIGH,CRITICAL crm-frontend:latest >/dev/null 2>&1; then
+    if docker images 2>/dev/null | grep -q "crm-frontend"; then
+        if command -v trivy >/dev/null 2>&1; then
+            trivy image --exit-code 1 --severity HIGH,CRITICAL crm-frontend:latest >/dev/null 2>&1
+            local trivy_result=$?
+            if [ $trivy_result -eq 0 ]; then
                 test_pass "Container frontend scan - nessuna vulnerabilità critica"
             else
-                test_warning "Container frontend ha vulnerabilità" "Review necessaria"
+                test_warning "Container frontend ha vulnerabilità" "Review necessaria (exit code: $trivy_result)"
             fi
         else
             test_warning "Container frontend non scansionabile" "Trivy non disponibile"
         fi
-    fi
-    
-    if [ "$backend_exists" = false ]; then
-        test_warning "Container backend non trovato" "Build container prima del test"
-    fi
-    
-    if [ "$frontend_exists" = false ]; then
+    else
         test_warning "Container frontend non trovato" "Build container prima del test"
     fi
 }
@@ -320,8 +284,8 @@ test_previous_phases_integration() {
     if [ -d "$HOME/devops-pipeline-fase-3" ]; then
         test_pass "FASE 3 presente e disponibile"
         
-        # Test Jenkins availability with safe timeout
-        if timeout 5 systemctl is-active jenkins >/dev/null 2>&1; then
+        # Test Jenkins availability
+        if systemctl is-active jenkins >/dev/null 2>&1; then
             test_pass "Jenkins service attivo"
         else
             test_warning "Jenkins service non attivo" "Avviare con systemctl start jenkins"
@@ -381,8 +345,8 @@ generate_report() {
   "status": "$([ $success_rate -ge 80 ] && echo "PASS" || echo "FAIL")",
   "tools": {
     "sonarqube": "$([ -d $HOME/sonarqube ] && echo "installed" || echo "missing")",
-    "trivy": "$(safe_command_check trivy 3 && echo "installed" || echo "missing")",
-    "owasp_zap": "$(timeout 10 docker images 2>/dev/null | grep -q 'zaproxy/zap-stable\|owasp/zap2docker-stable' && echo "installed" || echo "missing")"
+    "trivy": "$(command -v trivy >/dev/null 2>&1 && echo "installed" || echo "missing")",
+    "owasp_zap": "$(docker images 2>/dev/null | grep -q 'zaproxy/zap-stable\|owasp/zap2docker-stable' && echo "installed" || echo "missing")"
   },
   "recommendations": [
     $([ $success_rate -lt 80 ] && echo '    "Review failed tests and fix security tools installation",' || echo '')
@@ -400,7 +364,7 @@ main() {
     
     echo "======================================="
     echo "   CRM System - Security Test Suite"
-    echo "   FASE 4: Security Baseline - ROBUST"
+    echo "   FASE 4: Security Baseline - NO SET -E"
     echo "======================================="
     log_info "Avvio test suite security per FASE 4..."
     
