@@ -25,12 +25,23 @@
     "@types/node": "^20.4.8",
     "typescript": "^5.1.6",
     "vite": "^4.4.8",
-    "@vitejs/plugin-react": "^4.0.3"
+    "@vitejs/plugin-react": "^4.0.3",
+    "@testing-library/react": "^13.4.0",
+    "@testing-library/jest-dom": "^5.16.5",
+    "@testing-library/user-event": "^14.4.3",
+    "vitest": "^0.34.2",
+    "jsdom": "^22.1.0"
   },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "start": "vite preview --port 3000 --host"
+    "start": "vite preview --port 3000 --host",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "test:security": "npm audit && echo 'Frontend security tests passed'",
+    "test:ci": "npm run test && npm run test:security",
+    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   }
 }
