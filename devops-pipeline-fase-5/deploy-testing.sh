@@ -6,7 +6,7 @@
 #   Main Orchestrator Script
 # =======================================
 
-set -e
+# NO set -e per gestire meglio gli errori
 
 # Colors for output
 RED='\033[0;31m'
@@ -60,14 +60,20 @@ show_help() {
     echo "  $0 stop               # Ferma tutto"
 }
 
-# Execute step scripts
+# Execute step scripts with error handling
 execute_step() {
     local step_name=$1
     local step_script="$SCRIPT_DIR/deploy-testing/deploy-testing-$step_name.sh"
     
     if [ -f "$step_script" ]; then
         log_info "Esecuzione step: $step_name"
-        bash "$step_script"
+        if bash "$step_script"; then
+            log_success "Step $step_name completato"
+            return 0
+        else
+            log_error "Step $step_name fallito"
+            return 1
+        fi
     else
         log_error "Step script non trovato: $step_script"
         return 1
@@ -80,10 +86,10 @@ main() {
     
     case "${1:-help}" in
         "start")
-            execute_step "prerequisites"
-            execute_step "environment"
-            execute_step "services"
-            execute_step "smoke-tests"
+            execute_step "prerequisites" || exit 1
+            execute_step "environment" || exit 1
+            execute_step "services" || exit 1
+            execute_step "smoke-tests" || exit 1
             ;;
         "stop")
             execute_step "stop-services"
@@ -91,9 +97,9 @@ main() {
         "restart")
             execute_step "stop-services"
             sleep 2
-            execute_step "environment"
-            execute_step "services"
-            execute_step "smoke-tests"
+            execute_step "environment" || exit 1
+            execute_step "services" || exit 1
+            execute_step "smoke-tests" || exit 1
             ;;
         "status")
             execute_step "status"
