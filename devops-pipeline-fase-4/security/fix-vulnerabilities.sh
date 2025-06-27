@@ -69,26 +69,52 @@ fix_cross_spawn() {
     fi
 }
 
+# Function to setup package-lock if missing
+ensure_package_lock() {
+    local dir=$1
+    local name=$2
+    
+    cd "$dir"
+    
+    if [[ ! -f "package-lock.json" ]]; then
+        log_warn "No package-lock.json found in $name, creating one..."
+        npm install --package-lock-only
+        log_info "✅ package-lock.json created for $name"
+    else
+        log_info "✅ package-lock.json exists for $name"
+    fi
+}
+
 # Function to update all vulnerable dependencies
 fix_all_vulnerabilities() {
     log_info "Running comprehensive vulnerability fix..."
     
+    # Backend fixes
     cd "${PROJECT_ROOT}/backend"
     
+    # Ensure package-lock exists
+    ensure_package_lock "${PROJECT_ROOT}/backend" "backend"
+    
     # NPM audit fix
-    log_info "Running npm audit fix..."
-    npm audit fix
+    log_info "Running npm audit fix for backend..."
+    npm audit fix || log_warn "Some backend vulnerabilities may remain"
     
     # Force fix for high severity
-    log_info "Running npm audit fix --force for high severity issues..."
-    npm audit fix --force
+    log_info "Running npm audit fix --force for backend high severity issues..."
+    npm audit fix --force || log_warn "Some backend vulnerabilities may persist"
     
+    # Frontend fixes
     cd "${PROJECT_ROOT}/frontend"
     
+    # Ensure package-lock exists for frontend
+    ensure_package_lock "${PROJECT_ROOT}/frontend" "frontend"
+    
     # Fix frontend vulnerabilities
-    log_info "Checking frontend vulnerabilities..."
-    npm audit fix
-    npm audit fix --force
+    log_info "Running npm audit fix for frontend..."
+    npm audit fix || log_warn "Some frontend vulnerabilities may remain"
+    
+    log_info "Running npm audit fix --force for frontend high severity issues..."
+    npm audit fix --force || log_warn "Some frontend vulnerabilities may persist"
     
     cd "${PROJECT_ROOT}"
 }
@@ -99,11 +125,11 @@ verify_fixes() {
     
     cd "${PROJECT_ROOT}/backend"
     log_info "Backend vulnerability check:"
-    npm audit --audit-level=high || log_warn "Some vulnerabilities may remain"
+    npm audit --audit-level=high || log_warn "Some backend vulnerabilities may remain"
     
     cd "${PROJECT_ROOT}/frontend" 
     log_info "Frontend vulnerability check:"
-    npm audit --audit-level=high || log_warn "Some vulnerabilities may remain"
+    npm audit --audit-level=high || log_warn "Some frontend vulnerabilities may remain"
     
     cd "${PROJECT_ROOT}"
 }
@@ -116,14 +142,14 @@ update_package_locks() {
     cd "${PROJECT_ROOT}/backend"
     if [[ -f package-lock.json ]]; then
         log_info "Updating backend package-lock.json..."
-        npm ci --package-lock-only
+        npm ci --package-lock-only || npm install
     fi
     
     # Frontend
     cd "${PROJECT_ROOT}/frontend"
     if [[ -f package-lock.json ]]; then
         log_info "Updating frontend package-lock.json..."
-        npm ci --package-lock-only
+        npm ci --package-lock-only || npm install
     fi
     
     cd "${PROJECT_ROOT}"
@@ -139,16 +165,25 @@ main() {
         exit 1
     fi
     
-    # 1. Fix specific cross-spawn vulnerability
+    if [[ ! -f "${PROJECT_ROOT}/frontend/package.json" ]]; then
+        log_error "Frontend package.json not found. Are you in the CRM-System root?"
+        exit 1
+    fi
+    
+    # 1. Ensure package-lock files exist
+    ensure_package_lock "${PROJECT_ROOT}/backend" "backend"
+    ensure_package_lock "${PROJECT_ROOT}/frontend" "frontend"
+    
+    # 2. Fix specific cross-spawn vulnerability
     fix_cross_spawn
     
-    # 2. Fix all other vulnerabilities
+    # 3. Fix all other vulnerabilities
     fix_all_vulnerabilities
     
-    # 3. Update package locks
+    # 4. Update package locks
     update_package_locks
     
-    # 4. Verify fixes
+    # 5. Verify fixes
     verify_fixes
     
     log_info "🎉 Security vulnerability fix completed!"
