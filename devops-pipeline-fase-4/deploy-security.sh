@@ -2,7 +2,7 @@
 
 # =============================================================================
 # CRM System - Security Deploy Script
-# FASE 4: Security Baseline - COMPLETATO CON SONARQUBE E TEST SCRIPTS
+# FASE 4: Security Baseline - FIXED SONARQUBE LOCAL CONNECTION
 # =============================================================================
 
 set -euo pipefail
@@ -86,7 +86,7 @@ setup_sonarqube_project() {
         sleep 5
     done
     
-    # Create SonarQube configuration file
+    # Create SonarQube configuration file - FIXED FOR LOCAL
     cat > "$HOME/sonar-project.properties" << EOF
 # SonarQube Project Configuration for CRM System
 sonar.projectKey=crm-system
@@ -95,6 +95,7 @@ sonar.projectVersion=1.0
 sonar.sources=backend/src,frontend/src
 sonar.exclusions=**/node_modules/**,**/dist/**,**/build/**,**/*.test.ts,**/*.test.js
 sonar.sourceEncoding=UTF-8
+sonar.host.url=http://localhost:9000
 
 # Language-specific configurations
 sonar.typescript.lcov.reportPaths=backend/coverage/lcov.info,frontend/coverage/lcov.info
@@ -107,25 +108,46 @@ EOF
     log_success "Configurazione SonarQube creata in $HOME/sonar-project.properties"
 }
 
-# Manual SonarQube scan - NEW FUNCTION
+# Manual SonarQube scan - FIXED FOR LOCAL CONNECTION
 scan_sonarqube() {
     log_info "Esecuzione scan SonarQube manuale..."
     
-    # Check if sonar-scanner is available
-    if ! command -v sonar-scanner >/dev/null 2>&1; then
-        log_warning "sonar-scanner non trovato - uso Docker"
+    # Verify SonarQube is running
+    if ! curl -s "http://localhost:$SONARQUBE_PORT" > /dev/null 2>&1; then
+        log_error "SonarQube non disponibile su http://localhost:$SONARQUBE_PORT"
+        log_info "Avvia prima SonarQube: ./deploy-security.sh start-sonarqube"
+        return 1
+    fi
+    
+    # Change to project directory
+    cd ~/devops-pipeline-fase-3 || {
+        log_error "Directory ~/devops-pipeline-fase-3 non trovata"
+        return 1
+    }
+    
+    # Check if sonar-scanner is available locally
+    if command -v sonar-scanner >/dev/null 2>&1; then
+        log_info "Uso sonar-scanner locale"
         
-        # Use Docker sonar-scanner
-        docker run --rm \
-            --network=host \
-            -v "$(pwd):/usr/src" \
-            -v "$HOME/sonar-project.properties:/usr/src/sonar-project.properties" \
-            sonarsource/sonar-scanner-cli:latest
-    else
-        # Use local sonar-scanner
+        # Use local sonar-scanner with explicit local URL
         sonar-scanner \
             -Dsonar.host.url=http://localhost:$SONARQUBE_PORT \
             -Dsonar.projectKey=crm-system \
+            -Dsonar.projectName="CRM System" \
+            -Dsonar.sources=backend/src,frontend/src \
+            -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/build/**"
+    else
+        log_warning "sonar-scanner non trovato - uso Docker con configurazione locale"
+        
+        # Use Docker sonar-scanner with EXPLICIT LOCAL CONFIGURATION
+        docker run --rm \
+            --network=host \
+            -v "$(pwd):/usr/src" \
+            -e SONAR_HOST_URL=http://localhost:9000 \
+            sonarsource/sonar-scanner-cli:latest \
+            -Dsonar.host.url=http://localhost:9000 \
+            -Dsonar.projectKey=crm-system \
+            -Dsonar.projectName="CRM System" \
             -Dsonar.sources=backend/src,frontend/src \
             -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/build/**"
     fi
@@ -325,12 +347,13 @@ pipeline {
                     if (sonarStatus == 0) {
                         echo "Running SonarQube analysis..."
                         
-                        // Use Docker SonarQube scanner
+                        // Use Docker SonarQube scanner with LOCAL URL
                         sh '''
                             docker run --rm --network=host \
                                 -v "$(pwd):/usr/src" \
                                 -e SONAR_HOST_URL=http://localhost:9000 \
                                 sonarsource/sonar-scanner-cli:latest \
+                                -Dsonar.host.url=http://localhost:9000 \
                                 -Dsonar.projectKey=crm-system \
                                 -Dsonar.projectName="CRM System" \
                                 -Dsonar.sources=backend/src,frontend/src \
