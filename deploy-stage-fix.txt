@@ -1,0 +1,39 @@
+        stage('Deploy to Development') {
+            steps {
+                script {
+                    echo "=== DEPLOY: Development Environment ==="
+                    sh '''
+                        echo "Stopping existing containers..."
+                        docker stop crm-backend crm-frontend 2>/dev/null || echo "No containers to stop"
+                        docker rm crm-backend crm-frontend 2>/dev/null || echo "No containers to remove"
+                        
+                        echo "Starting updated containers..."
+                        
+                        # Start backend container
+                        docker run -d \
+                            --name crm-backend \
+                            -p 3001:3001 \
+                            -v $(pwd)/database.sqlite:/app/database.sqlite \
+                            --restart unless-stopped \
+                            crm-system-backend:latest
+                        
+                        # Start frontend container  
+                        docker run -d \
+                            --name crm-frontend \
+                            -p 3000:80 \
+                            --link crm-backend:backend \
+                            --restart unless-stopped \
+                            crm-system-frontend:latest
+                        
+                        echo "Waiting for containers to be ready..."
+                        sleep 30
+                        
+                        # Verify containers are running
+                        echo "Container status:"
+                        docker ps --filter name=crm- --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+                        
+                        echo "✅ Deployment to development completed"
+                    '''
+                }
+            }
+        }
