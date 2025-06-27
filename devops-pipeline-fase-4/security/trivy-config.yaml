@@ -1,0 +1,105 @@
+# =============================================================================
+# Trivy Configuration for Container Security Scanning
+# FASE 4: Security Baseline
+# =============================================================================
+
+# Cache configuration
+cache:
+  dir: /tmp/trivy-cache
+  
+# Database configuration
+db:
+  no-update: false
+  skip-update: false
+  
+# Vulnerability database
+vuln-type:
+  - os
+  - library
+  
+# Security checks
+security-checks:
+  - vuln
+  - config
+  - secret
+  
+# Severity levels to report
+severity:
+  - UNKNOWN
+  - LOW  
+  - MEDIUM
+  - HIGH
+  - CRITICAL
+  
+# Output configuration
+format: json
+output: /tmp/trivy-report.json
+
+# Ignore unfixed vulnerabilities
+ignore-unfixed: false
+
+# Exit code configuration
+exit-code: 1
+
+# Skip directories
+skip-dirs:
+  - node_modules
+  - .git
+  - .npm
+  - .cache
+  
+# Skip files
+skip-files:
+  - "*.log"
+  - "*.tmp"
+  - "*.swp"
+  
+# Timeout settings
+timeout: 5m
+
+# Policy configuration for Dockerfile
+dockerfile:
+  policy:
+    - rule: "CIS Docker Benchmark"
+    - rule: "Docker Security Best Practices"
+    
+# Custom policies
+policies:
+  - name: "No root user"
+    description: "Container should not run as root"
+    rule: "USER != root"
+    
+  - name: "HTTPS only"
+    description: "Only HTTPS connections allowed"
+    rule: "EXPOSE != 80"
+    
+  - name: "Health check required"
+    description: "Container must have health check"
+    rule: "HEALTHCHECK exists"
+    
+  - name: "No secrets in ENV"
+    description: "No secrets in environment variables"
+    rule: "ENV does not contain password|secret|key|token"
+    
+# Compliance standards
+compliance:
+  - docker-cis
+  - docker-benchmark
+  
+# License scanning
+license:
+  full: true
+  ignored:
+    - MIT
+    - Apache-2.0
+    - BSD-3-Clause
+    - ISC
+    
+# Secret detection
+secret:
+  config: /tmp/secret-config.yaml
+  
+# Performance tuning
+parallel: 4
+quiet: false
+no-progress: false

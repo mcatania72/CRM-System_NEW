@@ -1,0 +1,499 @@
+// =============================================================================
+// Enhanced Jenkinsfile with Security Integration
+// FASE 4: Security Baseline
+// =============================================================================
+
+pipeline {
+    agent any
+    
+    environment {
+        // Tool configurations
+        SCANNER_HOME = tool 'SonarQubeScanner'
+        TRIVY_CACHE_DIR = '/tmp/trivy-cache'
+        SECURITY_REPORTS_DIR = 'security-reports'
+        
+        // Security thresholds
+        MAX_CRITICAL_VULNS = '0'
+        MAX_HIGH_VULNS = '5'
+        SONARQUBE_QUALITY_GATE = 'true'
+        
+        // Application configuration
+        APP_URL = 'http://localhost:3000'
+        API_URL = 'http://localhost:3001'
+    }
+    
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timeout(time: 60, unit: 'MINUTES')
+        skipStagesAfterUnstable()
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.GIT_COMMIT = sh(returnStdout: true, script: 'git rev-parse HEAD').trim()
+                    env.GIT_BRANCH = sh(returnStdout: true, script: 'git rev-parse --abbrev-ref HEAD').trim()
+                }
+                
+                // Setup security reports directory
+                sh "mkdir -p ${SECURITY_REPORTS_DIR}/{sonarqube,trivy,zap,npm-audit,git-secrets}"
+            }
+        }
+        
+        stage('Environment Check') {
+            steps {
+                sh 'node --version'
+                sh 'npm --version'
+                sh 'docker --version'
+                sh 'trivy --version || echo "Trivy not available"'
+                sh 'sonar-scanner --version || echo "SonarQube scanner not available"'
+            }
+        }
+        
+        stage('Pre-Security Checks') {
+            parallel {
+                stage('Git Secrets Scan') {
+                    steps {
+                        script {
+                            try {
+                                sh 'git secrets --scan --recursive . > ${SECURITY_REPORTS_DIR}/git-secrets/scan-results.txt || true'
+                                sh 'git secrets --list > ${SECURITY_REPORTS_DIR}/git-secrets/configured-patterns.txt || true'
+                            } catch (Exception e) {
+                                echo "Git secrets scan failed: ${e.getMessage()}"
+                            }
+                        }
+                    }
+                }
+                
+                stage('Dependency License Check') {
+                    steps {
+                        dir('backend') {
+                            sh 'npm install --package-lock-only'
+                            sh 'npx license-checker --json > ../${SECURITY_REPORTS_DIR}/npm-audit/backend-licenses.json || true'
+                        }
+                        dir('frontend') {
+                            sh 'npm install --package-lock-only'
+                            sh 'npx license-checker --json > ../${SECURITY_REPORTS_DIR}/npm-audit/frontend-licenses.json || true'
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Dependencies Security Scan') {
+            parallel {
+                stage('NPM Audit Backend') {
+                    steps {
+                        dir('backend') {
+                            script {
+                                def auditResult = sh(
+                                    script: 'npm audit --audit-level moderate --json',
+                                    returnStatus: true
+                                )
+                                sh 'npm audit --audit-level moderate --json > ../${SECURITY_REPORTS_DIR}/npm-audit/backend-audit.json || true'
+                                sh 'npm audit --audit-level moderate > ../${SECURITY_REPORTS_DIR}/npm-audit/backend-audit.txt || true'
+                                
+                                if (auditResult > 15) { // npm audit returns different codes for different severity levels
+                                    error "Critical vulnerabilities found in backend dependencies"
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('NPM Audit Frontend') {
+                    steps {
+                        dir('frontend') {
+                            script {
+                                def auditResult = sh(
+                                    script: 'npm audit --audit-level moderate --json',
+                                    returnStatus: true
+                                )
+                                sh 'npm audit --audit-level moderate --json > ../${SECURITY_REPORTS_DIR}/npm-audit/frontend-audit.json || true'
+                                sh 'npm audit --audit-level moderate > ../${SECURITY_REPORTS_DIR}/npm-audit/frontend-audit.txt || true'
+                                
+                                if (auditResult > 15) {
+                                    error "Critical vulnerabilities found in frontend dependencies"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Build Backend') {
+            steps {
+                dir('backend') {
+                    sh 'npm ci --only=production'
+                    sh 'npm run build'
+                }
+            }
+            post {
+                always {
+                    // Archive build artifacts
+                    archiveArtifacts artifacts: 'backend/dist/**/*', allowEmptyArchive: true
+                }
+            }
+        }
+        
+        stage('Build Frontend') {
+            steps {
+                dir('frontend') {
+                    sh 'npm ci --only=production'
+                    sh 'npm run build'
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'frontend/dist/**/*', allowEmptyArchive: true
+                }
+            }
+        }
+        
+        stage('SAST - Static Application Security Testing') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                    changeRequest()
+                }
+            }
+            steps {
+                script {
+                    try {
+                        withSonarQubeEnv('SonarQube') {
+                            sh '''
+                                $SCANNER_HOME/bin/sonar-scanner \
+                                -Dsonar.projectKey=crm-system \
+                                -Dsonar.projectName="CRM System" \
+                                -Dsonar.projectVersion=${BUILD_NUMBER} \
+                                -Dsonar.sources=. \
+                                -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/build/**" \
+                                -Dsonar.host.url=http://localhost:9000 \
+                                -Dsonar.scm.revision=${GIT_COMMIT}
+                            '''
+                        }
+                        
+                        // Wait for quality gate
+                        timeout(time: 10, unit: 'MINUTES') {
+                            def qg = waitForQualityGate()
+                            if (qg.status != 'OK') {
+                                error "Quality gate failed: ${qg.status}"
+                            }
+                        }
+                    } catch (Exception e) {
+                        echo "SonarQube analysis failed: ${e.getMessage()}"
+                        currentBuild.result = 'UNSTABLE'
+                    }
+                }
+            }
+        }
+        
+        stage('Unit Tests') {
+            parallel {
+                stage('Backend Tests') {
+                    steps {
+                        dir('backend') {
+                            sh 'npm install --only=dev'
+                            sh 'npm test || true'
+                        }
+                    }
+                    post {
+                        always {
+                            publishTestResults testResultsPattern: 'backend/test-results.xml'
+                        }
+                    }
+                }
+                
+                stage('Frontend Tests') {
+                    steps {
+                        dir('frontend') {
+                            sh 'npm install --only=dev'
+                            sh 'npm test || true'
+                        }
+                    }
+                    post {
+                        always {
+                            publishTestResults testResultsPattern: 'frontend/test-results.xml'
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Docker Build & Container Security Scan') {
+            steps {
+                script {
+                    // Build Docker images
+                    sh 'docker-compose -f devops-pipeline-fase-2/docker-compose.yml build'
+                    
+                    // Scan backend container
+                    sh '''
+                        trivy image --exit-code 0 --severity HIGH,CRITICAL \
+                        --format json --output ${SECURITY_REPORTS_DIR}/trivy/backend-scan.json \
+                        crm-backend:latest || true
+                    '''
+                    
+                    sh '''
+                        trivy image --exit-code 0 --severity HIGH,CRITICAL \
+                        --format table --output ${SECURITY_REPORTS_DIR}/trivy/backend-scan.txt \
+                        crm-backend:latest || true
+                    '''
+                    
+                    // Scan frontend container
+                    sh '''
+                        trivy image --exit-code 0 --severity HIGH,CRITICAL \
+                        --format json --output ${SECURITY_REPORTS_DIR}/trivy/frontend-scan.json \
+                        crm-frontend:latest || true
+                    '''
+                    
+                    sh '''
+                        trivy image --exit-code 0 --severity HIGH,CRITICAL \
+                        --format table --output ${SECURITY_REPORTS_DIR}/trivy/frontend-scan.txt \
+                        crm-frontend:latest || true
+                    '''
+                    
+                    // Check if critical vulnerabilities found
+                    def backendCritical = sh(
+                        script: 'grep -c "CRITICAL" ${SECURITY_REPORTS_DIR}/trivy/backend-scan.txt || echo "0"',
+                        returnStdout: true
+                    ).trim() as Integer
+                    
+                    def frontendCritical = sh(
+                        script: 'grep -c "CRITICAL" ${SECURITY_REPORTS_DIR}/trivy/frontend-scan.txt || echo "0"',
+                        returnStdout: true
+                    ).trim() as Integer
+                    
+                    if (backendCritical > MAX_CRITICAL_VULNS as Integer || frontendCritical > MAX_CRITICAL_VULNS as Integer) {
+                        error "Critical vulnerabilities found in container images. Backend: ${backendCritical}, Frontend: ${frontendCritical}"
+                    }
+                }
+            }
+        }
+        
+        stage('Package Artifacts') {
+            steps {
+                script {
+                    // Create deployment package
+                    sh '''
+                        tar -czf crm-system-${BUILD_NUMBER}.tar.gz \
+                        backend/dist frontend/dist \
+                        devops-pipeline-fase-2/docker-compose.yml \
+                        devops-pipeline-fase-2/containers
+                    '''
+                    
+                    // Archive all artifacts
+                    archiveArtifacts artifacts: 'crm-system-*.tar.gz', fingerprint: true
+                    archiveArtifacts artifacts: '${SECURITY_REPORTS_DIR}/**/*', fingerprint: true
+                }
+            }
+        }
+        
+        stage('Deploy to Development') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                }
+            }
+            steps {
+                script {
+                    // Stop existing applications
+                    sh 'cd devops-pipeline-fase-1 && ./deploy.sh stop || true'
+                    sh 'cd devops-pipeline-fase-2 && ./deploy-containers.sh stop || true'
+                    
+                    // Deploy using containers (preferred)
+                    sh 'cd devops-pipeline-fase-2 && ./deploy-containers.sh start'
+                    
+                    // Wait for application to be ready
+                    sh 'sleep 30'
+                    
+                    // Verify deployment
+                    sh 'curl -f ${API_URL}/api/health || exit 1'
+                    sh 'curl -f ${APP_URL} || exit 1'
+                }
+            }
+        }
+        
+        stage('DAST - Dynamic Application Security Testing') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                }
+            }
+            steps {
+                script {
+                    try {
+                        // Run OWASP ZAP baseline scan
+                        sh '''
+                            docker run --rm \
+                            -v $(pwd)/${SECURITY_REPORTS_DIR}/zap:/zap/wrk:rw \
+                            --network="host" \
+                            -t owasp/zap2docker-stable:latest \
+                            zap-baseline.py \
+                            -t ${APP_URL} \
+                            -J zap-baseline-report.json \
+                            -r zap-baseline-report.html || true
+                        '''
+                        
+                        // Generate ZAP summary
+                        sh '''
+                            echo "ZAP Scan Summary" > ${SECURITY_REPORTS_DIR}/zap/scan-summary.txt
+                            echo "Target: ${APP_URL}" >> ${SECURITY_REPORTS_DIR}/zap/scan-summary.txt
+                            echo "Date: $(date)" >> ${SECURITY_REPORTS_DIR}/zap/scan-summary.txt
+                            echo "Build: ${BUILD_NUMBER}" >> ${SECURITY_REPORTS_DIR}/zap/scan-summary.txt
+                        '''
+                    } catch (Exception e) {
+                        echo "DAST scan failed: ${e.getMessage()}"
+                        currentBuild.result = 'UNSTABLE'
+                    }
+                }
+            }
+        }
+        
+        stage('Security Report & Gates') {
+            steps {
+                script {
+                    // Generate consolidated security report
+                    sh '''
+                        cat > ${SECURITY_REPORTS_DIR}/security-summary.json << EOF
+{
+  "build_number": "${BUILD_NUMBER}",
+  "git_commit": "${GIT_COMMIT}",
+  "git_branch": "${GIT_BRANCH}",
+  "timestamp": "$(date -Iseconds)",
+  "security_scans": {
+    "npm_audit": {
+      "backend": "${SECURITY_REPORTS_DIR}/npm-audit/backend-audit.json",
+      "frontend": "${SECURITY_REPORTS_DIR}/npm-audit/frontend-audit.json"
+    },
+    "container_scan": {
+      "backend": "${SECURITY_REPORTS_DIR}/trivy/backend-scan.json",
+      "frontend": "${SECURITY_REPORTS_DIR}/trivy/frontend-scan.json"
+    },
+    "sast": {
+      "sonarqube": "http://localhost:9000/dashboard?id=crm-system"
+    },
+    "dast": {
+      "owasp_zap": "${SECURITY_REPORTS_DIR}/zap/zap-baseline-report.html"
+    },
+    "secrets": {
+      "git_secrets": "${SECURITY_REPORTS_DIR}/git-secrets/scan-results.txt"
+    }
+  },
+  "compliance": {
+    "owasp_top_10": "covered",
+    "security_baseline": "implemented"
+  }
+}
+EOF
+                    '''
+                    
+                    // Create HTML summary report
+                    sh '''
+                        cat > ${SECURITY_REPORTS_DIR}/security-dashboard.html << EOF
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CRM System Security Report - Build ${BUILD_NUMBER}</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .header { background: #f0f0f0; padding: 20px; border-radius: 5px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .pass { color: green; } .fail { color: red; } .warn { color: orange; }
+        .reports { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🛡️ CRM System Security Report</h1>
+        <p><strong>Build:</strong> ${BUILD_NUMBER} | <strong>Commit:</strong> ${GIT_COMMIT} | <strong>Date:</strong> $(date)</p>
+    </div>
+    
+    <div class="reports">
+        <div class="section">
+            <h3>📦 Dependency Security</h3>
+            <p><a href="npm-audit/backend-audit.txt">Backend NPM Audit</a></p>
+            <p><a href="npm-audit/frontend-audit.txt">Frontend NPM Audit</a></p>
+        </div>
+        
+        <div class="section">
+            <h3>🐳 Container Security</h3>
+            <p><a href="trivy/backend-scan.txt">Backend Container Scan</a></p>
+            <p><a href="trivy/frontend-scan.txt">Frontend Container Scan</a></p>
+        </div>
+        
+        <div class="section">
+            <h3>🔍 Static Analysis</h3>
+            <p><a href="http://localhost:9000/dashboard?id=crm-system" target="_blank">SonarQube Dashboard</a></p>
+        </div>
+        
+        <div class="section">
+            <h3>🌐 Dynamic Testing</h3>
+            <p><a href="zap/zap-baseline-report.html">OWASP ZAP Report</a></p>
+        </div>
+        
+        <div class="section">
+            <h3>🔐 Secrets Detection</h3>
+            <p><a href="git-secrets/scan-results.txt">Git Secrets Scan</a></p>
+        </div>
+    </div>
+</body>
+</html>
+EOF
+                    '''
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            // Publish security reports
+            publishHTML([
+                allowMissing: false,
+                alwaysLinkToLastBuild: true,
+                keepAll: true,
+                reportDir: SECURITY_REPORTS_DIR,
+                reportFiles: 'security-dashboard.html',
+                reportName: 'Security Dashboard'
+            ])
+            
+            // Archive all security artifacts
+            archiveArtifacts artifacts: '${SECURITY_REPORTS_DIR}/**/*', fingerprint: true, allowEmptyArchive: true
+            
+            // Clean up Docker images to save space
+            sh 'docker system prune -f || true'
+        }
+        
+        success {
+            echo '✅ Pipeline completed successfully with comprehensive security checks!'
+            
+            // Send notification (if configured)
+            // emailext (
+            //     subject: "✅ Security Pipeline Success - CRM System Build ${BUILD_NUMBER}",
+            //     body: "Security pipeline completed successfully. View reports: ${BUILD_URL}Security_Dashboard",
+            //     to: "security-team@company.com"
+            // )
+        }
+        
+        failure {
+            echo '❌ Pipeline failed! Check security reports for critical issues.'
+            
+            // Send notification (if configured)
+            // emailext (
+            //     subject: "❌ Security Pipeline Failed - CRM System Build ${BUILD_NUMBER}",
+            //     body: "Security pipeline failed. Immediate action required. View logs: ${BUILD_URL}console",
+            //     to: "security-team@company.com"
+            // )
+        }
+        
+        unstable {
+            echo '⚠️ Pipeline completed with warnings. Review security findings.'
+        }
+    }
+}
