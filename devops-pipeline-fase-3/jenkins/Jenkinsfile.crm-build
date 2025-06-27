@@ -4,7 +4,7 @@ pipeline {
     environment {
         DOCKER_BUILDKIT = '1'
         COMPOSE_DOCKER_CLI_BUILD = '1'
-        NODE_ENV = 'production'
+        NODE_ENV = 'development'  // Changed to development to include devDependencies
         APP_PORT = '3000'
         API_PORT = '3001'
     }
@@ -61,7 +61,7 @@ pipeline {
                             dir('backend') {
                                 sh '''
                                     echo "Backend dependencies security scan..."
-                                    npm ci
+                                    npm install  # Install all dependencies including devDependencies
                                     npm audit --audit-level moderate --json > ../security-reports/npm-audit-backend.json || true
                                     npm audit --audit-level moderate
                                 '''
@@ -76,7 +76,7 @@ pipeline {
                             dir('frontend') {
                                 sh '''
                                     echo "Frontend dependencies security scan..."
-                                    npm ci
+                                    npm install  # Install all dependencies including devDependencies
                                     npm audit --audit-level moderate --json > ../security-reports/npm-audit-frontend.json || true
                                     npm audit --audit-level moderate
                                 '''
@@ -113,8 +113,11 @@ pipeline {
                     echo "=== BUILD: Backend ==="
                     dir('backend') {
                         sh '''
-                            echo "Installing backend dependencies..."
-                            npm ci
+                            echo "Installing backend dependencies (including devDependencies)..."
+                            npm install  # This installs both dependencies and devDependencies
+                            
+                            echo "Verifying TypeScript types are available..."
+                            npm list @types/express || echo "Types may be missing"
                             
                             echo "Building backend..."
                             npm run build
@@ -132,8 +135,8 @@ pipeline {
                     echo "=== BUILD: Frontend ==="
                     dir('frontend') {
                         sh '''
-                            echo "Installing frontend dependencies..."
-                            npm ci
+                            echo "Installing frontend dependencies (including devDependencies)..."
+                            npm install  # This installs both dependencies and devDependencies
                             
                             echo "Building frontend..."
                             npm run build
