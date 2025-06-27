@@ -171,30 +171,35 @@ sonar.javascript.lcov.reportPaths=backend/coverage/lcov.info,frontend/coverage/l
 sonar.typescript.lcov.reportPaths=backend/coverage/lcov.info,frontend/coverage/lcov.info
 sonar.host.url=http://localhost:9000
 EOF
+                    '''
                             
-                            # Try local scanner first, fallback to Docker
-                            if command -v sonar-scanner >/dev/null 2>&1; then
-                                echo "Using local sonar-scanner"
-                                sonar-scanner || echo "SonarQube local scan completed with warnings"
-                            else
-                                echo "Using Docker sonar-scanner"
+                    // Try local scanner first, fallback to Docker with credentials
+                    if (sh(script: 'command -v sonar-scanner', returnStatus: true) == 0) {
+                        echo "Using local sonar-scanner with withSonarQubeEnv"
+                        withSonarQubeEnv('SonarQube') {
+                            sh 'sonar-scanner || echo "SonarQube local scan completed with warnings"'
+                        }
+                    } else {
+                        echo "Using Docker sonar-scanner with credentials"
+                        withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
+                            sh '''
                                 docker run --rm --network=host \
                                     -v "$(pwd):/usr/src" \
                                     -e SONAR_HOST_URL=http://localhost:9000 \
+                                    -e SONAR_LOGIN=${SONAR_TOKEN} \
                                     sonarsource/sonar-scanner-cli:latest \
                                     -Dsonar.host.url=http://localhost:9000 \
+                                    -Dsonar.login=${SONAR_TOKEN} \
                                     -Dsonar.projectKey=crm-system \
                                     -Dsonar.projectName="CRM System" \
                                     -Dsonar.sources=backend/src,frontend/src \
                                     -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/build/**" \
                                     || echo "SonarQube Docker scan completed with warnings"
-                            fi
-                        else
-                            echo "⚠️ SonarQube not available - skipping SAST analysis"
-                        fi
-                        
-                        echo "✅ SAST analysis submitted to SonarQube"
-                    '''
+                            '''
+                        }
+                    }
+                    
+                    echo "✅ SAST analysis submitted to SonarQube"
                 }
             }
         }
