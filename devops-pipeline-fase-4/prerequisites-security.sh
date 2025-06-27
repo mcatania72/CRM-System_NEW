@@ -9,7 +9,7 @@ set -euo pipefail
 
 # Configuration
 LOG_FILE="$HOME/prerequisites-security.log"
-SOPNARQUBE_VERSION="9.9.3.79811"
+SONARQUBE_VERSION="9.9.3.79811"
 TRIVY_VERSION="0.48.3"
 
 # Logging functions
@@ -91,6 +91,12 @@ install_sonarqube() {
 install_trivy() {
     log_info "Installazione Trivy scanner..."
     
+    # Check if already installed
+    if command -v trivy >/dev/null 2>&1; then
+        log_success "Trivy già installato: $(trivy --version | head -1)"
+        return 0
+    fi
+    
     # Download and install
     wget -q "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" -O /tmp/trivy.tar.gz
     tar -xzf /tmp/trivy.tar.gz -C /tmp
@@ -119,8 +125,14 @@ install_owasp_zap() {
 install_nodejs_security() {
     log_info "Installazione tool security Node.js..."
     
+    # Check if tools are already installed
+    if npm list -g npm-audit-html >/dev/null 2>&1; then
+        log_success "Security tools Node.js già installati"
+        return 0
+    fi
+    
     # Install security linting tools globally
-    npm install -g npm-audit-html retire eslint-plugin-security
+    npm install -g npm-audit-html retire eslint-plugin-security license-checker
     
     log_success "Tool security Node.js installati"
 }
@@ -129,18 +141,21 @@ install_nodejs_security() {
 install_git_secrets() {
     log_info "Installazione git-secrets..."
     
-    if [ -d "$HOME/git-secrets" ]; then
+    if command -v git >/dev/null 2>&1 && git secrets --version >/dev/null 2>&1; then
         log_success "git-secrets già installato"
         return 0
     fi
     
     # Clone and install
-    cd "$HOME"
-    git clone https://github.com/awslabs/git-secrets.git
-    cd git-secrets
-    sudo make install
-    
-    log_success "git-secrets installato"
+    if [ ! -d "$HOME/git-secrets" ]; then
+        cd "$HOME"
+        git clone https://github.com/awslabs/git-secrets.git
+        cd git-secrets
+        sudo make install
+        log_success "git-secrets installato"
+    else
+        log_success "git-secrets directory già presente"
+    fi
 }
 
 # Main execution
@@ -189,6 +204,7 @@ main() {
     echo "- OWASP ZAP: $(docker images | grep owasp/zap2docker-stable | wc -l) image(s)"
     echo "- git-secrets: $(git secrets --version 2>/dev/null || echo 'Non trovato')"
     echo "- npm-audit-html: $(npm list -g npm-audit-html 2>/dev/null | grep npm-audit-html || echo 'Non trovato')"
+    echo "- license-checker: $(npm list -g license-checker 2>/dev/null | grep license-checker || echo 'Non trovato')"
     
     echo ""
     echo "📊 Sistema pronto per security scanning:"
@@ -196,6 +212,7 @@ main() {
     echo "- Static analysis: SonarQube"
     echo "- Dynamic testing: OWASP ZAP"
     echo "- Secret detection: git-secrets"
+    echo "- License compliance: license-checker"
     echo "- Reports: $HOME/security-reports/"
     
     log_success "✅ Tutti i prerequisiti per FASE 4 sono soddisfatti!"
