@@ -1,0 +1,66 @@
+# Artillery Performance Testing Configuration
+# FASE 5: Enterprise Testing Strategy
+
+config:
+  target: 'http://localhost:3101'
+  phases:
+    - duration: 30
+      arrivalRate: 5
+      name: "Warm up"
+    - duration: 60
+      arrivalRate: 10
+      name: "Sustained load"
+    - duration: 30
+      arrivalRate: 5
+      name: "Cool down"
+  
+  # Performance thresholds
+  ensure:
+    maxErrorRate: 5
+    p95: 2000
+    p99: 5000
+
+scenarios:
+  - name: "Health Check"
+    weight: 30
+    flow:
+      - get:
+          url: "/api/health"
+          expect:
+            - statusCode: 200
+  
+  - name: "Authentication Flow"
+    weight: 40
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "admin@crm.local"
+            password: "admin123"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+      - get:
+          url: "/api/customers"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: 200
+  
+  - name: "Customer Operations"
+    weight: 30
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "admin@crm.local"
+            password: "admin123"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+      - get:
+          url: "/api/customers"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: 200
