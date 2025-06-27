@@ -2,7 +2,7 @@
 
 # =============================================================================
 # CRM System - Security Test Suite
-# FASE 4: Security Baseline
+# FASE 4: Security Baseline - FIXED VERSION
 # =============================================================================
 
 set -euo pipefail
@@ -80,9 +80,11 @@ test_security_tools() {
         test_fail "Trivy non trovato" "Comando trivy non disponibile"
     fi
     
-    # Test OWASP ZAP Docker
-    if docker images | grep -q "owasp/zap2docker-stable"; then
+    # Test OWASP ZAP Docker - FIX: Correct image name
+    if docker images | grep -q "zaproxy/zap-stable"; then
         test_pass "OWASP ZAP Docker image presente"
+    elif docker images | grep -q "owasp/zap2docker-stable"; then
+        test_pass "OWASP ZAP Docker image presente (legacy)"
     else
         test_fail "OWASP ZAP mancante" "Docker image non scaricata"
     fi
@@ -94,11 +96,11 @@ test_security_tools() {
         test_warning "git-secrets non trovato" "Installazione opzionale"
     fi
     
-    # Test npm security tools
-    if npm list -g npm-audit-html >/dev/null 2>&1; then
+    # Test npm security tools - FIX: Add timeout to prevent hanging
+    if timeout 10 npm list -g npm-audit-html >/dev/null 2>&1; then
         test_pass "npm-audit-html installato"
     else
-        test_warning "npm-audit-html mancante" "Tool opzionale"
+        test_warning "npm-audit-html mancante o timeout" "Tool opzionale"
     fi
 }
 
@@ -115,15 +117,15 @@ test_sonarqube_service() {
         return
     fi
     
-    # Test SonarQube web interface
-    if curl -s "http://localhost:$SONARQUBE_PORT" > /dev/null; then
+    # Test SonarQube web interface with timeout
+    if timeout 10 curl -s "http://localhost:$SONARQUBE_PORT" > /dev/null; then
         test_pass "SonarQube web interface raggiungibile"
     else
         test_fail "SonarQube web interface non raggiungibile" "Porta $SONARQUBE_PORT non risponde"
     fi
     
-    # Test SonarQube API
-    local api_response=$(curl -s "http://localhost:$SONARQUBE_PORT/api/system/status" || echo "error")
+    # Test SonarQube API with timeout
+    local api_response=$(timeout 10 curl -s "http://localhost:$SONARQUBE_PORT/api/system/status" 2>/dev/null || echo "error")
     if echo "$api_response" | grep -q "UP\|OK"; then
         test_pass "SonarQube API funzionante"
     else
@@ -136,33 +138,33 @@ test_dependency_scanning() {
     echo "=== Test Dependency Scanning ==="
     log_info "Testando dependency scanning..."
     
-    # Test npm audit on backend
+    # Test npm audit on backend with timeout
     if [ -d "$HOME/devops/CRM-System/backend" ]; then
         cd "$HOME/devops/CRM-System/backend"
-        if npm audit --audit-level info >/dev/null 2>&1; then
+        if timeout 30 npm audit --audit-level info >/dev/null 2>&1; then
             test_pass "npm audit backend eseguito"
         else
             # npm audit returns non-zero if vulnerabilities found, but that's expected
-            if npm audit --audit-level high >/dev/null 2>&1; then
+            if timeout 30 npm audit --audit-level high >/dev/null 2>&1; then
                 test_pass "npm audit backend eseguito (vulnerabilità trovate)"
             else
-                test_warning "npm audit backend ha trovato vulnerabilità critiche" "Review necessaria"
+                test_warning "npm audit backend timeout o vulnerabilità critiche" "Review necessaria"
             fi
         fi
     else
         test_fail "Backend directory non trovata" "$HOME/devops/CRM-System/backend mancante"
     fi
     
-    # Test npm audit on frontend
+    # Test npm audit on frontend with timeout
     if [ -d "$HOME/devops/CRM-System/frontend" ]; then
         cd "$HOME/devops/CRM-System/frontend"
-        if npm audit --audit-level info >/dev/null 2>&1; then
+        if timeout 30 npm audit --audit-level info >/dev/null 2>&1; then
             test_pass "npm audit frontend eseguito"
         else
-            if npm audit --audit-level high >/dev/null 2>&1; then
+            if timeout 30 npm audit --audit-level high >/dev/null 2>&1; then
                 test_pass "npm audit frontend eseguito (vulnerabilità trovate)"
             else
-                test_warning "npm audit frontend ha trovato vulnerabilità critiche" "Review necessaria"
+                test_warning "npm audit frontend timeout o vulnerabilità critiche" "Review necessaria"
             fi
         fi
     else
@@ -177,21 +179,21 @@ test_container_security() {
     
     # Check if containers exist
     if docker images | grep -q "crm-backend"; then
-        # Test Trivy scanning
-        if trivy image --exit-code 1 --severity HIGH,CRITICAL crm-backend:latest >/dev/null 2>&1; then
+        # Test Trivy scanning with timeout
+        if timeout 60 trivy image --exit-code 1 --severity HIGH,CRITICAL crm-backend:latest >/dev/null 2>&1; then
             test_pass "Container backend scan - nessuna vulnerabilità critica"
         else
-            test_warning "Container backend ha vulnerabilità" "Review necessaria"
+            test_warning "Container backend ha vulnerabilità o timeout" "Review necessaria"
         fi
     else
         test_warning "Container backend non trovato" "Build container prima del test"
     fi
     
     if docker images | grep -q "crm-frontend"; then
-        if trivy image --exit-code 1 --severity HIGH,CRITICAL crm-frontend:latest >/dev/null 2>&1; then
+        if timeout 60 trivy image --exit-code 1 --severity HIGH,CRITICAL crm-frontend:latest >/dev/null 2>&1; then
             test_pass "Container frontend scan - nessuna vulnerabilità critica"
         else
-            test_warning "Container frontend ha vulnerabilità" "Review necessaria"
+            test_warning "Container frontend ha vulnerabilità o timeout" "Review necessaria"
         fi
     else
         test_warning "Container frontend non trovato" "Build container prima del test"
@@ -251,8 +253,8 @@ test_previous_phases_integration() {
     if [ -d "$HOME/devops-pipeline-fase-3" ]; then
         test_pass "FASE 3 presente e disponibile"
         
-        # Test Jenkins availability
-        if systemctl is-active jenkins >/dev/null 2>&1; then
+        # Test Jenkins availability with timeout
+        if timeout 5 systemctl is-active jenkins >/dev/null 2>&1; then
             test_pass "Jenkins service attivo"
         else
             test_warning "Jenkins service non attivo" "Avviare con systemctl start jenkins"
@@ -313,7 +315,7 @@ generate_report() {
   "tools": {
     "sonarqube": "$([ -d $HOME/sonarqube ] && echo "installed" || echo "missing")",
     "trivy": "$(command -v trivy >/dev/null && echo "installed" || echo "missing")",
-    "owasp_zap": "$(docker images | grep -q owasp/zap2docker-stable && echo "installed" || echo "missing")"
+    "owasp_zap": "$(docker images | grep -q 'zaproxy/zap-stable\|owasp/zap2docker-stable' && echo "installed" || echo "missing")"
   },
   "recommendations": [
     $([ $success_rate -lt 80 ] && echo '    "Review failed tests and fix security tools installation",' || echo '')
@@ -331,7 +333,7 @@ main() {
     
     echo "======================================="
     echo "   CRM System - Security Test Suite"
-    echo "   FASE 4: Security Baseline"
+    echo "   FASE 4: Security Baseline - FIXED"
     echo "======================================="
     log_info "Avvio test suite security per FASE 4..."
     
