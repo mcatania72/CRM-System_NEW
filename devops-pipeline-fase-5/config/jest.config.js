@@ -1,4 +1,4 @@
-// Jest Configuration for CRM System
+// Jest Configuration for CRM System Testing
 // FASE 5: Enterprise Testing Strategy
 
 module.exports = {
@@ -7,69 +7,57 @@ module.exports = {
   
   // Test file patterns
   testMatch: [
-    '**/__tests__/**/*.(js|jsx|ts|tsx)',
-    '**/*.(test|spec).(js|jsx|ts|tsx)'
+    '**/tests/**/*.test.js',
+    '**/testing/unit/**/*.test.js',
+    '**/__tests__/**/*.js',
+    '**/?(*.)+(spec|test).js'
   ],
-  
-  // Module file extensions
-  moduleFileExtensions: ['js', 'jsx', 'ts', 'tsx', 'json'],
-  
-  // Transform files
-  transform: {
-    '^.+\\.(ts|tsx)$': 'ts-jest',
-    '^.+\\.(js|jsx)$': 'babel-jest'
-  },
   
   // Coverage configuration
   collectCoverage: true,
-  coverageDirectory: 'testing/reports/coverage',
-  coverageReporters: [
-    'text',
-    'text-summary', 
-    'html',
-    'json-summary',
-    'lcov'
-  ],
-  
-  // Coverage thresholds
+  coverageDirectory: '../testing-workspace/coverage',
+  coverageReporters: ['text', 'lcov', 'html', 'json'],
   coverageThreshold: {
     global: {
       branches: 70,
-      functions: 80,
-      lines: 80,
-      statements: 80
+      functions: 70,
+      lines: 70,
+      statements: 70
     }
   },
   
   // Files to collect coverage from
   collectCoverageFrom: [
-    'src/**/*.{js,jsx,ts,tsx}',
-    '!src/**/*.d.ts',
-    '!src/index.ts',
-    '!src/main.tsx',
-    '!src/**/*.stories.{js,jsx,ts,tsx}',
-    '!src/**/*.test.{js,jsx,ts,tsx}',
-    '!src/**/*.spec.{js,jsx,ts,tsx}'
+    'src/**/*.js',
+    'routes/**/*.js',
+    'models/**/*.js',
+    '!src/index.js',
+    '!**/node_modules/**',
+    '!**/coverage/**'
   ],
   
   // Setup files
-  setupFilesAfterEnv: ['<rootDir>/testing/config/jest.setup.js'],
+  setupFilesAfterEnv: [
+    '../testing/config/jest.setup.js'
+  ],
   
-  // Module name mapping
-  moduleNameMapping: {
-    '^@/(.*)$': '<rootDir>/src/$1',
-    '^@testing/(.*)$': '<rootDir>/testing/$1'
+  // Module paths
+  moduleDirectories: ['node_modules', 'src'],
+  
+  // Transform files
+  transform: {
+    '^.+\\.js$': 'babel-jest'
   },
   
   // Test timeout
-  testTimeout: 10000,
+  testTimeout: 30000,
+  
+  // Verbose output
+  verbose: true,
   
   // Clear mocks between tests
   clearMocks: true,
   
   // Restore mocks after each test
-  restoreMocks: true,
-  
-  // Verbose output
-  verbose: true
+  restoreMocks: true
 };

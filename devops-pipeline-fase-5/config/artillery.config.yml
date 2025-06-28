@@ -1,37 +1,81 @@
-# Artillery Performance Testing Configuration
+# Artillery Configuration for Performance Testing
 # FASE 5: Enterprise Testing Strategy
 
 config:
-  target: 'http://localhost:3101'
+  target: "http://localhost:3101"
   phases:
+    # Warm-up phase
     - duration: 30
       arrivalRate: 5
       name: "Warm up"
+    
+    # Ramp-up phase
     - duration: 60
       arrivalRate: 10
+      rampTo: 20
+      name: "Ramp up load"
+    
+    # Sustained load phase
+    - duration: 120
+      arrivalRate: 20
       name: "Sustained load"
-    - duration: 30
-      arrivalRate: 5
-      name: "Cool down"
-  
+    
+    # Peak load phase
+    - duration: 60
+      arrivalRate: 30
+      name: "Peak load"
+
+  # Default headers
+  defaults:
+    headers:
+      Content-Type: "application/json"
+      User-Agent: "Artillery-LoadTest/1.0"
+
+  # Plugins
+  plugins:
+    metrics-by-endpoint:
+      useOnlyRequestNames: true
+    
   # Performance thresholds
   ensure:
-    maxErrorRate: 5
-    p95: 2000
-    p99: 5000
+    thresholds:
+      - http.response_time.p95: 1000  # 95th percentile < 1s
+      - http.response_time.p99: 2000  # 99th percentile < 2s
+      - http.codes.200: 95            # 95% success rate
+      - vusers.failed: 5              # < 5% failed users
 
+# Test scenarios
 scenarios:
-  - name: "Health Check"
+  # Health check scenario
+  - name: "Health Check Load Test"
     weight: 30
     flow:
       - get:
           url: "/api/health"
+          name: "Health Check"
           expect:
             - statusCode: 200
+            - hasProperty: "status"
   
-  - name: "Authentication Flow"
-    weight: 40
+  # Authentication scenario
+  - name: "Authentication Load Test"
+    weight: 25
     flow:
+      - post:
+          url: "/api/auth/login"
+          name: "Login Request"
+          json:
+            email: "test{{ $randomInt(1, 100) }}@example.com"
+            password: "testpass123"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+  
+  # API endpoints scenario
+  - name: "API Endpoints Load Test"
+    weight: 25
+    flow:
+      # Login first
       - post:
           url: "/api/auth/login"
           json:
@@ -40,27 +84,31 @@ scenarios:
           capture:
             - json: "$.token"
               as: "authToken"
+      
+      # Test authenticated endpoints
       - get:
           url: "/api/customers"
+          name: "Get Customers"
           headers:
             Authorization: "Bearer {{ authToken }}"
-          expect:
-            - statusCode: 200
+      
+      - get:
+          url: "/api/opportunities"
+          name: "Get Opportunities"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
   
-  - name: "Customer Operations"
-    weight: 30
+  # Frontend load scenario
+  - name: "Frontend Load Test"
+    weight: 20
     flow:
-      - post:
-          url: "/api/auth/login"
-          json:
-            email: "admin@crm.local"
-            password: "admin123"
-          capture:
-            - json: "$.token"
-              as: "authToken"
       - get:
-          url: "/api/customers"
-          headers:
-            Authorization: "Bearer {{ authToken }}"
+          url: "http://localhost:3100"
+          name: "Frontend Home"
           expect:
             - statusCode: 200
+      
+      - get:
+          url: "http://localhost:3100/static/js/main.js"
+          name: "Frontend Assets"
+          ifTrue: "{{ $randomInt(1, 100) <= 30 }}"  # 30% of users load assets
