@@ -103,12 +103,12 @@ scenarios:
     weight: 20
     flow:
       - get:
-          url: "http://localhost:3100"
+          url: "http://localhost:3000"
           name: "Frontend Home"
           expect:
             - statusCode: 200
       
       - get:
-          url: "http://localhost:3100/static/js/main.js"
+          url: "http://localhost:3000/assets/index.js"
           name: "Frontend Assets"
           ifTrue: "{{ $randomInt(1, 100) <= 30 }}"  # 30% of users load assets
