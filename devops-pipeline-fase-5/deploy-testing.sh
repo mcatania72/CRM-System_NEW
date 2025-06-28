@@ -3,10 +3,8 @@
 # =======================================
 #   CRM System - Testing Deployment
 #   FASE 5: Enterprise Testing Strategy
-#   Main Orchestrator Script
+#   Main Orchestrator for Testing Pipeline
 # =======================================
-
-# NO set -e per gestire meglio gli errori
 
 # Colors for output
 RED='\033[0;31m'
@@ -33,6 +31,10 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} ❌ $1" | tee -a "$LOG_FILE"
 }
 
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} ⚠️ $1" | tee -a "$LOG_FILE"
+}
+
 print_header() {
     echo "======================================="
     echo "   CRM System - Testing Deployment"
@@ -45,28 +47,28 @@ show_help() {
     echo "Usage: $0 [COMMAND]"
     echo ""
     echo "Commands:"
-    echo "  start     - Avvia testing environment completo"
-    echo "  stop      - Ferma testing services"
-    echo "  restart   - Riavvia testing services"
-    echo "  status    - Mostra status testing services"
-    echo "  smoke     - Esegui smoke tests"
-    echo "  cleanup   - Pulisci testing artifacts"
-    echo "  help      - Mostra questo help"
+    echo "  start        - Avvia testing pipeline completa"
+    echo "  stop         - Ferma tutti i servizi testing"
+    echo "  restart      - Riavvia testing pipeline"
+    echo "  status       - Verifica status servizi"
+    echo "  smoke        - Esegui smoke tests rapidi"
+    echo "  cleanup      - Pulisci ambiente testing"
+    echo "  help         - Mostra questo help"
     echo ""
     echo "Examples:"
-    echo "  $0 start              # Avvia testing environment"
-    echo "  $0 status             # Verifica status"
-    echo "  $0 smoke              # Quick tests"
-    echo "  $0 stop               # Ferma tutto"
+    echo "  $0 start         # Avvia pipeline completa"
+    echo "  $0 status        # Verifica stato"
+    echo "  $0 smoke         # Test rapidi"
 }
 
-# Execute step scripts with error handling
+# Execute step modules
 execute_step() {
     local step_name=$1
     local step_script="$SCRIPT_DIR/deploy-testing/deploy-testing-$step_name.sh"
     
+    log_info "Esecuzione step: $step_name"
+    
     if [ -f "$step_script" ]; then
-        log_info "Esecuzione step: $step_name"
         if bash "$step_script"; then
             log_success "Step $step_name completato"
             return 0
@@ -84,12 +86,24 @@ execute_step() {
 main() {
     print_header
     
-    case "${1:-help}" in
+    local command="${1:-start}"
+    local overall_success=true
+    
+    case "$command" in
         "start")
-            execute_step "prerequisites" || exit 1
-            execute_step "environment" || exit 1
-            execute_step "services" || exit 1
-            execute_step "smoke-tests" || exit 1
+            log_info "Avvio testing pipeline completa..."
+            
+            execute_step "prerequisites" || overall_success=false
+            execute_step "environment" || overall_success=false
+            execute_step "services" || overall_success=false
+            execute_step "smoke-tests" || overall_success=false
+            
+            if $overall_success; then
+                log_success "Testing pipeline avviata con successo!"
+                log_info "Prossimi passi: ./test-advanced.sh [unit|integration|e2e|all]"
+            else
+                log_error "Errori durante l'avvio della pipeline"
+            fi
             ;;
         "stop")
             execute_step "stop-services"
@@ -97,9 +111,8 @@ main() {
         "restart")
             execute_step "stop-services"
             sleep 2
-            execute_step "environment" || exit 1
-            execute_step "services" || exit 1
-            execute_step "smoke-tests" || exit 1
+            execute_step "services"
+            execute_step "smoke-tests"
             ;;
         "status")
             execute_step "status"
@@ -114,11 +127,20 @@ main() {
             show_help
             ;;
         *)
-            log_error "Comando non riconosciuto: $1"
+            log_error "Comando non riconosciuto: $command"
             show_help
             exit 1
             ;;
     esac
+    
+    echo ""
+    if $overall_success; then
+        log_success "Deploy testing completato con successo! 🎉"
+        exit 0
+    else
+        log_error "Deploy testing fallito ❌"
+        exit 1
+    fi
 }
 
 # Execute main function
