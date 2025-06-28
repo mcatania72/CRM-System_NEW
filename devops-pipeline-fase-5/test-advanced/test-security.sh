@@ -25,10 +25,10 @@ log_security "NPM Security Audit - Backend..."
 cd "$HOME/devops/CRM-System/backend" || exit 1
 
 if npm audit --audit-level=moderate 2>&1 | tee "$HOME/testing-workspace/reports/security-audit-backend.log"; then
-    log_security "✅ Backend NPM audit: PASSED"
+    log_security "[SUCCESS] Backend NPM audit: PASSED"
     BACKEND_AUDIT=true
 else
-    log_security "⚠️ Backend NPM audit: WARNINGS"
+    log_security "[WARNING] Backend NPM audit: WARNINGS"
     BACKEND_AUDIT=false
 fi
 
@@ -37,10 +37,10 @@ log_security "NPM Security Audit - Frontend..."
 cd "$HOME/devops/CRM-System/frontend" || exit 1
 
 if npm audit --audit-level=moderate 2>&1 | tee "$HOME/testing-workspace/reports/security-audit-frontend.log"; then
-    log_security "✅ Frontend NPM audit: PASSED"
+    log_security "[SUCCESS] Frontend NPM audit: PASSED"
     FRONTEND_AUDIT=true
 else
-    log_security "⚠️ Frontend NPM audit: WARNINGS"
+    log_security "[WARNING] Frontend NPM audit: WARNINGS"
     FRONTEND_AUDIT=false
 fi
 
@@ -49,10 +49,10 @@ log_security "Security Headers Check..."
 HEADERS_RESPONSE=$(curl -s -I http://localhost:3101/api/health 2>/dev/null)
 
 if echo "$HEADERS_RESPONSE" | grep -qi "x-frame-options\|x-content-type-options\|strict-transport-security"; then
-    log_security "✅ Security headers: PRESENT"
+    log_security "[SUCCESS] Security headers: PRESENT"
     HEADERS_SUCCESS=true
 else
-    log_security "⚠️ Security headers: MISSING"
+    log_security "[WARNING] Security headers: MISSING"
     HEADERS_SUCCESS=false
 fi
 
@@ -61,10 +61,10 @@ log_security "Authentication Protection Test..."
 AUTH_TEST=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3101/api/protected 2>/dev/null)
 
 if [[ "$AUTH_TEST" == "401" || "$AUTH_TEST" == "403" ]]; then
-    log_security "✅ Authentication protection: ACTIVE"
+    log_security "[SUCCESS] Authentication protection: ACTIVE"
     AUTH_PROTECTION=true
 else
-    log_security "⚠️ Authentication protection: WEAK"
+    log_security "[WARNING] Authentication protection: WEAK"
     AUTH_PROTECTION=false
 fi
 
@@ -75,13 +75,13 @@ log_security "Basic OWASP Security Checks..."
 SQL_TEST=$(curl -s -o /dev/null -w "%{http_code}" \
     "http://localhost:3101/api/auth/login" \
     -H "Content-Type: application/json" \
-    -d '{"email":"admin@test.com'; DROP TABLE users; --","password":"test"}' 2>/dev/null)
+    -d '{"email":"admin@test.com; DROP TABLE users; --","password":"test"}' 2>/dev/null)
 
 if [[ "$SQL_TEST" == "400" || "$SQL_TEST" == "422" || "$SQL_TEST" == "401" ]]; then
-    log_security "✅ SQL Injection protection: ACTIVE"
+    log_security "[SUCCESS] SQL Injection protection: ACTIVE"
     SQL_PROTECTION=true
 else
-    log_security "⚠️ SQL Injection protection: UNCLEAR"
+    log_security "[WARNING] SQL Injection protection: UNCLEAR"
     SQL_PROTECTION=false
 fi
 
@@ -89,10 +89,10 @@ fi
 XSS_TEST=$(curl -s "http://localhost:3000/?search=<script>alert('xss')</script>" | grep -o "<script>" | wc -l 2>/dev/null)
 
 if [[ "$XSS_TEST" -eq 0 ]]; then
-    log_security "✅ XSS protection: ACTIVE"
+    log_security "[SUCCESS] XSS protection: ACTIVE"
     XSS_PROTECTION=true
 else
-    log_security "⚠️ XSS protection: WEAK"
+    log_security "[WARNING] XSS protection: WEAK"
     XSS_PROTECTION=false
 fi
 
@@ -114,9 +114,9 @@ EOF
 OVERALL_SUCCESS=$([ "$BACKEND_AUDIT" = true ] && [ "$FRONTEND_AUDIT" = true ] && [ "$AUTH_PROTECTION" = true ] && echo true || echo false)
 
 if [[ "$OVERALL_SUCCESS" == true ]]; then
-    log_security "✅ Security tests completati con successo!"
+    log_security "[SUCCESS] Security tests completati con successo!"
     exit 0
 else
-    log_security "⚠️ Security tests completati con warning"
+    log_security "[WARNING] Security tests completati con warning"
     exit 0  # Non fallire per security warnings
 fi
