@@ -16,10 +16,25 @@ import dashboardRoutes from './routes/dashboard';
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10); // Fix: assicura che sia number
 
-// Rate limiting
+// Rate limiting - Testing-friendly configuration
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minuti
-    max: 100 // limite di 100 richieste per finestra per IP
+    max: 10000, // 10k richieste per testing (era 100)
+    skip: (req) => {
+        // Skip rate limiting per localhost durante testing
+        const isLocalhost = req.ip === '127.0.0.1' || 
+                           req.ip === '::1' || 
+                           req.ip === '::ffff:127.0.0.1' ||
+                           req.connection.remoteAddress === '127.0.0.1' ||
+                           req.connection.remoteAddress === '::1';
+        return isLocalhost;
+    },
+    message: {
+        error: 'Too many requests from this IP',
+        retryAfter: '15 minutes'
+    },
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 });
 
 // Middleware di sicurezza
@@ -55,7 +70,8 @@ app.get('/api/health', (req, res) => {
     res.json({ 
         status: 'OK', 
         timestamp: new Date().toISOString(),
-        version: '1.0.0'
+        version: '1.0.0',
+        environment: process.env.NODE_ENV || 'development'
     });
 });
 
@@ -90,6 +106,7 @@ AppDataSource.initialize()
         app.listen(PORT, '0.0.0.0', () => {
             console.log(`Server in esecuzione sulla porta ${PORT}`);
             console.log(`Health check: http://localhost:${PORT}/api/health`);
+            console.log(`Rate limiting: ${limiter.skip ? 'Disabled for localhost' : 'Enabled'}`);
         });
     })
     .catch(error => {
