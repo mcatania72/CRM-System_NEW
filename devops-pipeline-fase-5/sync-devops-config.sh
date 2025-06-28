@@ -127,11 +127,12 @@ download_file "$REPO_URL/$FASE_DIR/deploy-testing/deploy-testing-status.sh" "./d
 download_file "$REPO_URL/$FASE_DIR/deploy-testing/deploy-testing-smoke-tests.sh" "./deploy-testing/deploy-testing-smoke-tests.sh"
 download_file "$REPO_URL/$FASE_DIR/deploy-testing/deploy-testing-cleanup.sh" "./deploy-testing/deploy-testing-cleanup.sh"
 
-# Download test-advanced modules
+# Download test-advanced modules - FIXED: Aggiunto test-e2e-simple.sh
 log_info "=== Scaricamento Test-Advanced Modules ==="
 download_file "$REPO_URL/$FASE_DIR/test-advanced/test-unit.sh" "./test-advanced/test-unit.sh"
 download_file "$REPO_URL/$FASE_DIR/test-advanced/test-integration.sh" "./test-advanced/test-integration.sh"
 download_file "$REPO_URL/$FASE_DIR/test-advanced/test-e2e.sh" "./test-advanced/test-e2e.sh"
+download_file "$REPO_URL/$FASE_DIR/test-advanced/test-e2e-simple.sh" "./test-advanced/test-e2e-simple.sh"
 download_file "$REPO_URL/$FASE_DIR/test-advanced/test-performance.sh" "./test-advanced/test-performance.sh"
 download_file "$REPO_URL/$FASE_DIR/test-advanced/test-security.sh" "./test-advanced/test-security.sh"
 download_file "$REPO_URL/$FASE_DIR/test-advanced/generate-report.sh" "./test-advanced/generate-report.sh"
@@ -202,6 +203,7 @@ CRITICAL_FILES=(
     "config/playwright.config.js"
     "deploy-testing/deploy-testing-prerequisites.sh"
     "test-advanced/test-unit.sh"
+    "test-advanced/test-e2e-simple.sh"
 )
 
 MISSING_FILES=0
@@ -225,7 +227,7 @@ for phase in "${PHASES[@]}"; do
     fi
 done
 
-# Check if CRM System repository is available
+# Check if CRM System repository is available - FIXED: check più accurato
 if [[ -d "../CRM-System" ]]; then
     log_success "✅ Repository CRM-System trovato"
     
@@ -233,11 +235,13 @@ if [[ -d "../CRM-System" ]]; then
     if [[ -d "../CRM-System/backend" && -d "../CRM-System/frontend" ]]; then
         log_success "✅ Backend e Frontend accessibili per testing"
     else
-        log_warning "⚠️ Backend/Frontend non accessibili - clonare repository CRM-System"
+        log_warning "⚠️ Backend/Frontend non accessibili - verificare struttura repository"
     fi
+elif [[ -d "../../CRM-System" ]]; then
+    log_success "✅ Repository CRM-System trovato (livello superiore)"
 else
-    log_warning "⚠️ Repository CRM-System non trovato nella directory parent"
-    log_info "Per testing completo, clonare: git clone https://github.com/mcatania72/CRM-System.git"
+    log_info "ℹ️ Repository CRM-System non necessario per FASE 5 - testing su servizi dockerizzati"
+    log_info "Per testing completo del codice sorgente: git clone https://github.com/mcatania72/CRM-System.git"
 fi
 
 # Summary
@@ -252,7 +256,8 @@ if [[ $MISSING_FILES -eq 0 ]]; then
     echo "Prossimi passi:"
     echo "1. ./prerequisites-testing.sh    # Installa testing tools"
     echo "2. ./deploy-testing.sh start     # Avvia testing pipeline"
-    echo "3. ./test-advanced.sh all        # Esegui test suite completa"
+    echo "3. ./test-advanced.sh e2e-fast   # Test veloci"
+    echo "4. ./test-advanced.sh all        # Test suite completa"
     echo ""
     echo "Per test specifici:"
     echo "• ./test-advanced.sh unit        # Unit tests"
