@@ -74,8 +74,13 @@ execute_test_module() {
     
     if [ -f "$test_script" ]; then
         log_test "Esecuzione $test_type tests..."
-        bash "$test_script"
-        return $?
+        if bash "$test_script"; then
+            log_success "$test_type tests completati"
+            return 0
+        else
+            log_error "$test_type tests falliti"
+            return 1
+        fi
     else
         log_error "Test script non trovato: $test_script"
         return 1
