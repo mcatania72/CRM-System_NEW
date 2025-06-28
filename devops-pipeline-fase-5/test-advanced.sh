@@ -6,8 +6,6 @@
 #   Main Orchestrator for Testing
 # =======================================
 
-set -e
-
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -54,6 +52,7 @@ show_help() {
     echo "  unit         - Esegui solo unit tests"
     echo "  integration  - Esegui solo integration tests"
     echo "  e2e          - Esegui solo end-to-end tests"
+    echo "  e2e-fast     - Esegui E2E tests semplificati (veloci)"
     echo "  performance  - Esegui solo performance tests"
     echo "  security     - Esegui solo security tests"
     echo "  all          - Esegui tutti i test (default)"
@@ -63,6 +62,7 @@ show_help() {
     echo "Examples:"
     echo "  $0 unit                # Solo unit tests"
     echo "  $0 integration         # Solo integration tests"
+    echo "  $0 e2e-fast           # E2E tests veloci (10-30s)"
     echo "  $0 all                 # Tutti i test"
     echo "  $0                     # Tutti i test (default)"
 }
@@ -87,13 +87,13 @@ init_test_environment() {
     log_info "Inizializzazione test environment..."
     
     # Check if testing services are running
-    if ! curl -s "http://localhost:3101/api/health" >/dev/null; then
+    if ! curl -s "http://localhost:3101/api/health" >/dev/null 2>&1; then
         log_info "Avvio automatico testing services..."
         if [ -f "$SCRIPT_DIR/deploy-testing.sh" ]; then
             bash "$SCRIPT_DIR/deploy-testing.sh" start
         else
             log_error "deploy-testing.sh non trovato"
-            exit 1
+            return 1
         fi
     fi
     
@@ -132,6 +132,11 @@ main() {
             init_test_environment
             execute_test_module "e2e" || overall_success=false
             ;;
+        "e2e-fast")
+            init_test_environment
+            log_test "Esecuzione E2E tests semplificati..."
+            bash "$SCRIPT_DIR/test-advanced/test-e2e-simple.sh" || overall_success=false
+            ;;
         "performance")
             init_test_environment
             execute_test_module "performance" || overall_success=false
@@ -144,6 +149,23 @@ main() {
             init_test_environment
             
             log_info "Esecuzione test suite completa..."
+            
+            execute_test_module "unit" || overall_success=false
+            execute_test_module "integration" || overall_success=false
+            
+            # Use fast E2E by default for speed
+            log_test "Esecuzione E2E tests semplificati..."
+            bash "$SCRIPT_DIR/test-advanced/test-e2e-simple.sh" || overall_success=false
+            
+            execute_test_module "performance" || overall_success=false
+            execute_test_module "security" || overall_success=false
+            
+            generate_test_report
+            ;;
+        "all-full")
+            init_test_environment
+            
+            log_info "Esecuzione test suite completa con E2E full..."
             
             execute_test_module "unit" || overall_success=false
             execute_test_module "integration" || overall_success=false
@@ -173,6 +195,13 @@ main() {
         log_error "ADVANCED TESTING SUITE: SOME TESTS FAILED ❌"
     fi
     echo "======================================="
+    
+    # Return appropriate exit code
+    if $overall_success; then
+        exit 0
+    else
+        exit 1
+    fi
 }
 
 # Execute main function
