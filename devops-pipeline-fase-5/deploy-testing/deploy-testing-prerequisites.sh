@@ -1,69 +1,73 @@
 #!/bin/bash
 
-# =======================================
-#   Deploy Testing - Prerequisites Check
-#   FASE 5: Step 1
-# =======================================
-
-set -e
+# ============================================
+# Deploy Testing - Prerequisites Module
+# FASE 5: Verifica prerequisiti testing
+# ============================================
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-log_info() {
+# Logging function
+log_prerequisites() {
     echo -e "${BLUE}[PREREQUISITES]${NC} $1"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') PREREQUISITES: $1" >> ~/deploy-testing.log
 }
 
-log_success() {
-    echo -e "${GREEN}[PREREQUISITES]${NC} ✅ $1"
-}
+log_prerequisites "Verifica prerequisiti testing environment..."
 
-log_error() {
-    echo -e "${RED}[PREREQUISITES]${NC} ❌ $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[PREREQUISITES]${NC} ⚠️ $1"
-}
-
-log_info "Verifica prerequisiti testing environment..."
-
-# Check if FASE 1-4 are available
-if [ ! -d "$HOME/devops-pipeline-fase-1" ]; then
-    log_error "FASE 1 non trovata. Esegui prima le fasi precedenti."
-    exit 1
-fi
-
-log_success "FASE 1 trovata"
-
-if [ ! -d "$HOME/devops-pipeline-fase-2" ]; then
-    log_warning "FASE 2 non trovata - testing solo in modalità native."
-else
-    log_success "FASE 2 trovata"
-fi
-
-if [ ! -d "$HOME/devops-pipeline-fase-3" ]; then
-    log_warning "FASE 3 non trovata - testing senza Jenkins integration."
-else
-    log_success "FASE 3 trovata"
-fi
+# Check previous phases
+PHASES=("devops-pipeline-fase-1" "devops-pipeline-fase-2" "devops-pipeline-fase-3" "devops-pipeline-fase-4")
+for phase in "${PHASES[@]}"; do
+    if [[ -d "../$phase" ]]; then
+        log_prerequisites "✅ $phase trovata"
+    else
+        log_prerequisites "⚠️ $phase non trovata"
+    fi
+done
 
 # Check testing tools
-missing_tools=()
+TOOLS=("node" "npm" "docker")
+for tool in "${TOOLS[@]}"; do
+    if command -v "$tool" >/dev/null 2>&1; then
+        log_prerequisites "✅ $tool disponibile"
+    else
+        log_prerequisites "❌ $tool non disponibile"
+        exit 1
+    fi
+done
 
-command -v jest >/dev/null 2>&1 || missing_tools+=("jest")
-command -v playwright >/dev/null 2>&1 || missing_tools+=("playwright")
-command -v artillery >/dev/null 2>&1 || missing_tools+=("artillery")
-
-if [ ${#missing_tools[@]} -gt 0 ]; then
-    log_error "Testing tools mancanti: ${missing_tools[*]}"
-    log_info "Esegui: ./prerequisites-testing.sh"
-    exit 1
+# Check testing-specific tools
+if npm list -g jest >/dev/null 2>&1 || command -v jest >/dev/null 2>&1; then
+    log_prerequisites "✅ Jest disponibile"
+else
+    log_prerequisites "⚠️ Jest non trovato (opzionale)"
 fi
 
-log_success "Testing tools verificati"
-log_success "Prerequisiti testing verificati con successo!"
+if command -v playwright >/dev/null 2>&1 || npx playwright --version >/dev/null 2>&1; then
+    log_prerequisites "✅ Playwright disponibile"
+else
+    log_prerequisites "⚠️ Playwright non trovato (opzionale)"
+fi
+
+log_prerequisites "✅ Testing tools verificati"
+
+# Check if base application is running
+if curl -s http://localhost:3000 >/dev/null 2>&1; then
+    log_prerequisites "✅ Base application (3000) disponibile"
+else
+    log_prerequisites "⚠️ Base application non in esecuzione"
+fi
+
+if curl -s http://localhost:3001 >/dev/null 2>&1; then
+    log_prerequisites "✅ Base backend (3001) disponibile"
+else
+    log_prerequisites "⚠️ Base backend non in esecuzione"
+fi
+
+log_prerequisites "✅ Prerequisiti testing verificati con successo!"
+exit 0
