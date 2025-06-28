@@ -1,95 +1,129 @@
 #!/bin/bash
 
-# =======================================
-#   Test Advanced - E2E Tests Module
-#   FASE 5: End-to-End Testing
-# =======================================
+# ============================================
+# Test Advanced - E2E Tests Module
+# FASE 5: End-to-end testing con Playwright
+# ============================================
 
-# NO set -e per gestire meglio gli errori
-
-# Colors
+# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-log_test() {
+# Logging function
+log_e2e() {
     echo -e "${BLUE}[E2E]${NC} $1"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') E2E: $1" >> ~/test-advanced.log
 }
 
-log_success() {
-    echo -e "${GREEN}[E2E]${NC} ✅ $1"
-}
+log_e2e "Esecuzione End-to-End Tests..."
 
-log_error() {
-    echo -e "${RED}[E2E]${NC} ❌ $1"
-}
-
-log_test "Esecuzione End-to-End Tests..."
-
-cd "$HOME/devops/CRM-System"
-
-# Check if Playwright is installed
-if ! command -v playwright >/dev/null 2>&1; then
-    log_error "Playwright non installato"
+# Check if Playwright is available
+if ! command -v playwright >/dev/null 2>&1 && ! npx playwright --version >/dev/null 2>&1; then
+    log_e2e "❌ Playwright non disponibile"
     exit 1
 fi
 
-# Create Playwright config if not exists
-if [ ! -f "playwright.config.js" ]; then
-    log_test "Creazione configurazione Playwright..."
-    cp "$HOME/devops-pipeline-fase-5/config/playwright.config.js" .
-fi
+# Create Playwright config for testing
+log_e2e "Creazione configurazione Playwright..."
+cd "$HOME/devops/CRM-System" || exit 1
 
-# Create basic E2E test if not exists
+cat > playwright.config.js << 'EOF'
+const { defineConfig, devices } = require('@playwright/test');
+
+module.exports = defineConfig({
+  testDir: './testing/e2e',
+  fullyParallel: true,
+  workers: 2,
+  retries: 1,
+  timeout: 30000,
+  
+  use: {
+    baseURL: 'http://localhost:3100',
+    headless: true,
+    video: 'off',
+    screenshot: 'only-on-failure',
+    trace: 'off',
+  },
+
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
+
+  reporter: [
+    ['list'],
+    ['html', { outputFolder: 'testing/reports/e2e', open: 'never' }]
+  ],
+});
+EOF
+
+# Create basic E2E tests
+log_e2e "Creazione test E2E di base..."
 mkdir -p testing/e2e
-if [ ! -f "testing/e2e/basic.spec.js" ]; then
-    log_test "Creazione test E2E di base..."
-    cat > testing/e2e/basic.spec.js << 'EOF'
+
+cat > testing/e2e/basic.spec.js << 'EOF'
 const { test, expect } = require('@playwright/test');
 
-test.describe('CRM System E2E Tests', () => {
-  test('should load homepage', async ({ page }) => {
+test.describe('CRM Application E2E Tests', () => {
+  test('homepage loads', async ({ page }) => {
     await page.goto('/');
-    await expect(page).toHaveTitle(/CRM|React|Vite/);
+    await expect(page).toHaveTitle(/CRM|Login|Dashboard/);
   });
-  
-  test('should handle basic navigation', async ({ page }) => {
+
+  test('login page has form elements', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('input[type="email"], input[name="email"]')).toBeVisible();
+    await expect(page.locator('input[type="password"], input[name="password"]')).toBeVisible();
+  });
+
+  test('can attempt login', async ({ page }) => {
     await page.goto('/');
     
-    // Basic check that page is responsive
-    const body = await page.locator('body');
-    await expect(body).toBeVisible();
-  });
-  
-  test('should handle API connectivity', async ({ page }) => {
-    let apiCallsMade = 0;
-    page.on('request', request => {
-      if (request.url().includes('/api/')) {
-        apiCallsMade++;
-      }
-    });
+    const emailInput = page.locator('input[type="email"], input[name="email"]').first();
+    const passwordInput = page.locator('input[type="password"], input[name="password"]').first();
     
-    await page.goto('/');
+    await emailInput.fill('admin@crm.local');
+    await passwordInput.fill('admin123');
+    
+    const submitButton = page.locator('button[type="submit"], button').first();
+    await submitButton.click();
+    
+    // Wait for navigation or error message
     await page.waitForTimeout(3000);
-    
-    console.log(`API calls made: ${apiCallsMade}`);
   });
 });
 EOF
+
+# Run Playwright E2E tests
+log_e2e "Esecuzione Playwright E2E tests..."
+if npx playwright test 2>&1 | tee "$HOME/testing-workspace/reports/e2e-tests.log"; then
+    log_e2e "✅ E2E Tests: PASSED ✅"
+    E2E_SUCCESS=true
+else
+    log_e2e "❌ E2E Tests: FAILED ❌"
+    log_e2e "Vedi: $HOME/testing-workspace/reports/e2e-tests.log"
+    E2E_SUCCESS=false
 fi
 
-# Run Playwright tests
-log_test "Esecuzione Playwright E2E tests..."
-REPORTS_DIR="$HOME/devops/CRM-System/testing/reports"
-mkdir -p "$REPORTS_DIR"
+# Generate E2E test report
+log_e2e "Generazione report E2E tests..."
+cat > "$HOME/testing-workspace/reports/e2e-summary.json" << EOF
+{
+  "timestamp": "$(date -Iseconds)",
+  "e2e_tests": $E2E_SUCCESS,
+  "overall": $E2E_SUCCESS
+}
+EOF
 
-if npx playwright test --reporter=html,json > "$REPORTS_DIR/e2e-tests.log" 2>&1; then
-    log_success "E2E Tests: PASSED 🎉"
+if [[ "$E2E_SUCCESS" == true ]]; then
+    log_e2e "✅ E2E tests completati con successo!"
     exit 0
 else
-    log_error "E2E Tests: FAILED ❌"
-    log_test "Vedi: $REPORTS_DIR/e2e-tests.log"
+    log_e2e "❌ E2E tests falliti"
     exit 1
 fi

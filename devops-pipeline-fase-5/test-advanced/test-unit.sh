@@ -1,167 +1,64 @@
 #!/bin/bash
 
-# =======================================
-#   Test Advanced - Unit Tests Module
-#   FASE 5: Unit Testing (FIXED)
-# =======================================
+# ============================================
+# Test Advanced - Unit Tests Module
+# FASE 5: Unit testing backend e frontend
+# ============================================
 
-# NO set -e per gestire meglio gli errori
-
-# Colors
+# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-log_test() {
+# Logging function
+log_unit() {
     echo -e "${BLUE}[UNIT]${NC} $1"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') UNIT: $1" >> ~/test-advanced.log
 }
 
-log_success() {
-    echo -e "${GREEN}[UNIT]${NC} ✅ $1"
-}
+log_unit "Esecuzione Unit Tests..."
 
-log_error() {
-    echo -e "${RED}[UNIT]${NC} ❌ $1"
-}
+# Backend Unit Tests
+log_unit "Backend Unit Tests..."
+cd "$HOME/devops/CRM-System/backend" || exit 1
 
-log_warning() {
-    echo -e "${YELLOW}[UNIT]${NC} ⚠️ $1"
-}
-
-log_test "Esecuzione Unit Tests..."
-
-REPORTS_DIR="$HOME/devops/CRM-System/testing/reports"
-mkdir -p "$REPORTS_DIR"
-
-backend_passed=true
-frontend_passed=true
-
-# Backend unit tests
-log_test "Unit tests backend..."
-cd "$HOME/devops/CRM-System/backend"
-
-# Check if test files exist
-test_files=$(find . -name "*.test.js" -o -name "*.test.ts" -o -name "*.spec.js" -o -name "*.spec.ts" 2>/dev/null | wc -l)
-
-if [ "$test_files" -eq 0 ]; then
-    log_warning "No backend test files found, creating sample test..."
-    
-    # Create tests directory
-    mkdir -p src/__tests__
-    
-    # Create sample test
-    cat > src/__tests__/sample.test.js << 'EOF'
-// Sample Backend Test
-describe('Backend Sample Tests', () => {
-  test('should pass basic test', () => {
-    expect(true).toBe(true);
-  });
-  
-  test('should handle math operations', () => {
-    expect(2 + 2).toBe(4);
-  });
-  
-  test('should handle string operations', () => {
-    const str = 'CRM Backend';
-    expect(str).toContain('CRM');
-  });
-});
-EOF
-    
-    log_success "Sample backend test created"
-fi
-
-# Run backend tests
-if npm test -- --coverage --coverageReporters=json-summary --coverageReporters=html --coverageDirectory="$REPORTS_DIR/backend-coverage" --passWithNoTests > "$REPORTS_DIR/backend-unit-tests.log" 2>&1; then
-    log_success "Backend unit tests: PASSED"
+if npm test 2>&1 | tee "$HOME/testing-workspace/reports/unit-backend.log"; then
+    log_unit "✅ Backend unit tests PASSED"
+    BACKEND_SUCCESS=true
 else
-    log_error "Backend unit tests: FAILED"
-    log_error "Check log: cat $REPORTS_DIR/backend-unit-tests.log"
-    backend_passed=false
+    log_unit "❌ Backend unit tests FAILED"
+    BACKEND_SUCCESS=false
 fi
 
-# Frontend unit tests  
-log_test "Unit tests frontend..."
-cd "$HOME/devops/CRM-System/frontend"
+# Frontend Unit Tests
+log_unit "Frontend Unit Tests..."
+cd "$HOME/devops/CRM-System/frontend" || exit 1
 
-# Check if test files exist
-test_files=$(find . -name "*.test.js" -o -name "*.test.jsx" -o -name "*.test.ts" -o -name "*.test.tsx" 2>/dev/null | wc -l)
-
-if [ "$test_files" -eq 0 ]; then
-    log_warning "No frontend test files found, creating sample test..."
-    
-    # Create tests directory
-    mkdir -p src/__tests__
-    
-    # Create sample test
-    cat > src/__tests__/sample.test.jsx << 'EOF'
-// Sample Frontend Test
-import { describe, it, expect } from 'vitest';
-
-describe('Frontend Sample Tests', () => {
-  it('should pass basic test', () => {
-    expect(true).toBe(true);
-  });
-  
-  it('should handle math operations', () => {
-    expect(2 + 2).toBe(4);
-  });
-  
-  it('should handle string operations', () => {
-    const str = 'CRM Frontend';
-    expect(str).toContain('CRM');
-  });
-  
-  it('should handle array operations', () => {
-    const arr = [1, 2, 3];
-    expect(arr).toHaveLength(3);
-    expect(arr).toContain(2);
-  });
-});
-EOF
-    
-    log_success "Sample frontend test created"
-fi
-
-# Check if Vitest is configured
-if ! grep -q "vitest" package.json; then
-    log_warning "Vitest not found in package.json, installing..."
-    npm install --save-dev vitest @vitest/ui jsdom 2>/dev/null || true
-fi
-
-# Run frontend tests with correct Vitest syntax
-if npm test -- --coverage --run --coverageReporter=html --coverageReporter=json-summary > "$REPORTS_DIR/frontend-unit-tests.log" 2>&1; then
-    log_success "Frontend unit tests: PASSED"
+if npm test 2>&1 | tee "$HOME/testing-workspace/reports/unit-frontend.log"; then
+    log_unit "✅ Frontend unit tests PASSED"
+    FRONTEND_SUCCESS=true
 else
-    # Try alternative syntax
-    log_warning "Trying alternative Vitest syntax..."
-    if npx vitest run --coverage > "$REPORTS_DIR/frontend-unit-tests.log" 2>&1; then
-        log_success "Frontend unit tests: PASSED (alternative syntax)"
-    else
-        log_error "Frontend unit tests: FAILED"
-        log_error "Check log: cat $REPORTS_DIR/frontend-unit-tests.log"
-        frontend_passed=false
-    fi
+    log_unit "❌ Frontend unit tests FAILED"
+    FRONTEND_SUCCESS=false
 fi
 
-if $backend_passed && $frontend_passed; then
-    log_success "Unit Tests: ALL PASSED 🎉"
+# Generate unit test report
+log_unit "Generazione report unit tests..."
+cat > "$HOME/testing-workspace/reports/unit-summary.json" << EOF
+{
+  "timestamp": "$(date -Iseconds)",
+  "backend": $BACKEND_SUCCESS,
+  "frontend": $FRONTEND_SUCCESS,
+  "overall": $([ "$BACKEND_SUCCESS" = true ] && [ "$FRONTEND_SUCCESS" = true ] && echo true || echo false)
+}
+EOF
+
+if [[ "$BACKEND_SUCCESS" == true && "$FRONTEND_SUCCESS" == true ]]; then
+    log_unit "✅ Unit tests completati con successo!"
     exit 0
 else
-    log_error "Unit Tests: SOME FAILED ❌"
-    log_test "Creating summary report..."
-    
-    # Create simple summary
-    cat > "$REPORTS_DIR/unit-tests-summary.txt" << EOF
-Unit Tests Summary
-==================
-Backend: $([ "$backend_passed" = true ] && echo "PASSED" || echo "FAILED")
-Frontend: $([ "$frontend_passed" = true ] && echo "PASSED" || echo "FAILED")
-
-Generated: $(date)
-EOF
-    
+    log_unit "❌ Unit tests falliti"
     exit 1
 fi

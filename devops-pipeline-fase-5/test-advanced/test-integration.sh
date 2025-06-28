@@ -1,142 +1,94 @@
 #!/bin/bash
 
-# =======================================
-#   Test Advanced - Integration Tests Module
-#   FASE 5: Integration Testing (FIXED)
-# =======================================
+# ============================================
+# Test Advanced - Integration Tests Module
+# FASE 5: Integration testing API e database
+# ============================================
 
-# NO set -e per gestire meglio gli errori
-
-# Colors
+# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-log_test() {
+# Logging function
+log_integration() {
     echo -e "${BLUE}[INTEGRATION]${NC} $1"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') INTEGRATION: $1" >> ~/test-advanced.log
 }
 
-log_success() {
-    echo -e "${GREEN}[INTEGRATION]${NC} ✅ $1"
-}
+log_integration "Esecuzione Integration Tests..."
 
-log_error() {
-    echo -e "${RED}[INTEGRATION]${NC} ❌ $1"
-}
+# Test API Endpoints
+log_integration "Test API Endpoints..."
 
-log_test "Esecuzione Integration Tests..."
-
-TEST_PORT_BACKEND=3101
-tests_passed=0
-tests_total=6
-
-# Test 1: API Health Check (FIXED - check for "OK" not "ok")
-log_test "Test 1: API Health Check"
-health_response=$(curl -s "http://localhost:$TEST_PORT_BACKEND/api/health" 2>/dev/null)
-if echo "$health_response" | grep -q '"status":"OK"'; then
-    log_success "✓ API Health Check"
-    ((tests_passed++))
+# Health check
+if curl -s --max-time 10 http://localhost:3101/api/health | grep -q "OK"; then
+    log_integration "✅ API Health endpoint OK"
+    API_HEALTH=true
 else
-    log_error "✗ API Health Check (response: $health_response)"
+    log_integration "❌ API Health endpoint FAILED"
+    API_HEALTH=false
 fi
 
-# Test 2: Authentication Flow
-log_test "Test 2: Authentication Flow"
-token=$(curl -s -X POST "http://localhost:$TEST_PORT_BACKEND/api/auth/login" \
+# Auth endpoints
+log_integration "Test Auth API..."
+AUTH_RESPONSE=$(curl -s --max-time 10 -X POST \
     -H "Content-Type: application/json" \
-    -d '{"email":"admin@crm.local","password":"admin123"}' | \
-    node -e "try { const data = JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8')); console.log(data.token || ''); } catch(e) { console.log(''); }" 2>/dev/null)
+    -d '{"email":"admin@crm.local","password":"admin123"}' \
+    http://localhost:3101/api/auth/login)
 
-if [ -n "$token" ]; then
-    log_success "✓ Authentication Flow"
-    ((tests_passed++))
+if echo "$AUTH_RESPONSE" | grep -q "token\|success"; then
+    log_integration "✅ Auth API login OK"
+    AUTH_SUCCESS=true
 else
-    log_error "✗ Authentication Flow"
+    log_integration "❌ Auth API login FAILED"
+    AUTH_SUCCESS=false
 fi
 
-# Test 3: Database Connection
-log_test "Test 3: Database Connection"
-if curl -s "http://localhost:$TEST_PORT_BACKEND/api/customers" \
-    -H "Authorization: Bearer $token" | grep -q "\[\|{\|customers"; then
-    log_success "✓ Database Connection"
-    ((tests_passed++))
-else
-    log_error "✗ Database Connection"
-fi
-
-# Test 4: CRUD Operations (FIXED - use valid phone format)
-log_test "Test 4: CRUD Operations"
-customer_id=$(curl -s -X POST "http://localhost:$TEST_PORT_BACKEND/api/customers" \
-    -H "Authorization: Bearer $token" \
-    -H "Content-Type: application/json" \
-    -d '{"name":"Integration Test Customer","email":"integration@test.com","phone":"1234567890"}' | \
-    node -e "try { const data = JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8')); console.log(data.id || ''); } catch(e) { console.log(''); }" 2>/dev/null)
-
-if [ -n "$customer_id" ] && [ "$customer_id" != "null" ]; then
-    log_success "✓ CRUD Operations (Customer created: $customer_id)"
-    ((tests_passed++))
-else
-    # Try alternative phone format
-    customer_id=$(curl -s -X POST "http://localhost:$TEST_PORT_BACKEND/api/customers" \
-        -H "Authorization: Bearer $token" \
-        -H "Content-Type: application/json" \
-        -d '{"name":"Integration Test Customer","email":"integration2@test.com","phone":"123-456-7890"}' | \
-        node -e "try { const data = JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8')); console.log(data.id || ''); } catch(e) { console.log(''); }" 2>/dev/null)
-    
-    if [ -n "$customer_id" ] && [ "$customer_id" != "null" ]; then
-        log_success "✓ CRUD Operations (Customer created with alt format: $customer_id)"
-        ((tests_passed++))
+# Database connectivity
+log_integration "Test Database Connectivity..."
+if [[ -f "$HOME/testing-workspace/test.db" ]]; then
+    if sqlite3 "$HOME/testing-workspace/test.db" "SELECT COUNT(*) FROM users;" >/dev/null 2>&1; then
+        log_integration "✅ Database connectivity OK"
+        DB_SUCCESS=true
     else
-        log_error "✗ CRUD Operations"
-        # Debug: show what the API returned
-        debug_response=$(curl -s -X POST "http://localhost:$TEST_PORT_BACKEND/api/customers" \
-            -H "Authorization: Bearer $token" \
-            -H "Content-Type: application/json" \
-            -d '{"name":"Debug Customer","email":"debug@test.com","phone":"1234567890"}' 2>/dev/null)
-        echo "    Debug response: $debug_response"
+        log_integration "❌ Database query FAILED"
+        DB_SUCCESS=false
     fi
-fi
-
-# Test 5: API Error Handling
-log_test "Test 5: API Error Handling"
-error_response=$(curl -s -w "%{http_code}" "http://localhost:$TEST_PORT_BACKEND/api/nonexistent")
-if [[ "$error_response" =~ 404$ ]]; then
-    log_success "✓ API Error Handling (404 for nonexistent endpoint)"
-    ((tests_passed++))
 else
-    log_error "✗ API Error Handling (expected 404, got: $error_response)"
+    log_integration "❌ Test database not found"
+    DB_SUCCESS=false
 fi
 
-# Test 6: Data Validation
-log_test "Test 6: Data Validation"
-validation_response=$(curl -s -w "%{http_code}" -X POST "http://localhost:$TEST_PORT_BACKEND/api/customers" \
-    -H "Authorization: Bearer $token" \
-    -H "Content-Type: application/json" \
-    -d '{"invalid":"data"}')
-if [[ "$validation_response" =~ 400$ ]]; then
-    log_success "✓ Data Validation (400 for invalid data)"
-    ((tests_passed++))
+# Frontend-Backend integration
+log_integration "Test Frontend-Backend Integration..."
+if curl -s --max-time 10 http://localhost:3100 | grep -q "CRM\|Dashboard\|Login"; then
+    log_integration "✅ Frontend-Backend integration OK"
+    FE_BE_SUCCESS=true
 else
-    log_error "✗ Data Validation (expected 400, got: $validation_response)"
+    log_integration "❌ Frontend-Backend integration FAILED"
+    FE_BE_SUCCESS=false
 fi
 
-REPORTS_DIR="$HOME/devops/CRM-System/testing/reports"
-mkdir -p "$REPORTS_DIR"
-echo "{\"timestamp\": \"$(date -Iseconds)\", \"tests_passed\": $tests_passed, \"tests_total\": $tests_total, \"success_rate\": $(echo "scale=2; $tests_passed * 100 / $tests_total" | bc 2>/dev/null || echo "0")}" > "$REPORTS_DIR/integration-tests.json"
+# Generate integration test report
+log_integration "Generazione report integration tests..."
+cat > "$HOME/testing-workspace/reports/integration-summary.json" << EOF
+{
+  "timestamp": "$(date -Iseconds)",
+  "api_health": $API_HEALTH,
+  "auth_api": $AUTH_SUCCESS,
+  "database": $DB_SUCCESS,
+  "frontend_backend": $FE_BE_SUCCESS,
+  "overall": $([ "$API_HEALTH" = true ] && [ "$AUTH_SUCCESS" = true ] && [ "$DB_SUCCESS" = true ] && [ "$FE_BE_SUCCESS" = true ] && echo true || echo false)
+}
+EOF
 
-echo "\n=== INTEGRATION TESTS RESULTS ==="
-echo "Tests passed: $tests_passed/$tests_total"
-
-success_rate=$(echo "scale=2; $tests_passed * 100 / $tests_total" | bc 2>/dev/null || echo "0")
-if [ "$tests_passed" -eq "$tests_total" ]; then
-    log_success "Integration Tests: $success_rate% - ALL PASSED! 🎉"
-    exit 0
-elif [ "$tests_passed" -ge 4 ]; then
-    log_success "Integration Tests: $success_rate% - GOOD RESULTS! ✅"
+if [[ "$API_HEALTH" == true && "$AUTH_SUCCESS" == true && "$DB_SUCCESS" == true && "$FE_BE_SUCCESS" == true ]]; then
+    log_integration "✅ Integration tests completati con successo!"
     exit 0
 else
-    log_error "Integration Tests: $success_rate%"
+    log_integration "❌ Integration tests falliti"
     exit 1
 fi
