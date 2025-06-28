@@ -1,162 +1,275 @@
 #!/bin/bash
 
-# =======================================
-#   Test Advanced - Report Generator
-#   FASE 5: Comprehensive Test Report
-# =======================================
+# ============================================
+# Test Advanced - Report Generator Module
+# FASE 5: Generazione report completo testing
+# ============================================
 
-# NO set -e per gestire meglio gli errori
-
-# Colors
+# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-log_info() {
+# Logging function
+log_report() {
     echo -e "${BLUE}[REPORT]${NC} $1"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') REPORT: $1" >> ~/test-advanced.log
 }
 
-log_success() {
-    echo -e "${GREEN}[REPORT]${NC} ✅ $1"
+log_report "Generazione report completo..."
+
+# Ensure reports directory exists
+mkdir -p "$HOME/testing-workspace/reports"
+
+# Collect test results
+REPORT_DIR="$HOME/testing-workspace/reports"
+TIMESTAMP=$(date -Iseconds)
+
+# Read test summaries
+read_json_value() {
+    local file="$1"
+    local key="$2"
+    if [[ -f "$file" ]]; then
+        grep "\"$key\"" "$file" | cut -d':' -f2 | tr -d ' ,"' | head -1
+    else
+        echo "false"
+    fi
 }
 
-log_error() {
-    echo -e "${RED}[REPORT]${NC} ❌ $1"
+# Collect results
+UNIT_RESULT=$(read_json_value "$REPORT_DIR/unit-summary.json" "overall")
+INTEGRATION_RESULT=$(read_json_value "$REPORT_DIR/integration-summary.json" "overall")
+E2E_RESULT=$(read_json_value "$REPORT_DIR/e2e-summary.json" "overall")
+PERFORMANCE_RESULT=$(read_json_value "$REPORT_DIR/performance-summary.json" "overall")
+SECURITY_RESULT=$(read_json_value "$REPORT_DIR/security-summary.json" "overall")
+
+# Calculate overall success
+if [[ "$UNIT_RESULT" == "true" && "$INTEGRATION_RESULT" == "true" && "$E2E_RESULT" == "true" && "$PERFORMANCE_RESULT" == "true" ]]; then
+    OVERALL_SUCCESS="true"
+else
+    OVERALL_SUCCESS="false"
+fi
+
+# Generate JSON report
+log_report "Generazione JSON report..."
+cat > "$REPORT_DIR/test-results-summary.json" << EOF
+{
+  "timestamp": "$TIMESTAMP",
+  "overall_success": $OVERALL_SUCCESS,
+  "results": {
+    "unit_tests": $UNIT_RESULT,
+    "integration_tests": $INTEGRATION_RESULT,
+    "e2e_tests": $E2E_RESULT,
+    "performance_tests": $PERFORMANCE_RESULT,
+    "security_tests": $SECURITY_RESULT
+  },
+  "details": {
+    "unit": "$REPORT_DIR/unit-summary.json",
+    "integration": "$REPORT_DIR/integration-summary.json",
+    "e2e": "$REPORT_DIR/e2e-summary.json",
+    "performance": "$REPORT_DIR/performance-summary.json",
+    "security": "$REPORT_DIR/security-summary.json"
+  }
 }
+EOF
 
-log_info "Generazione report completo..."
-
-REPORTS_DIR="$HOME/devops/CRM-System/testing/reports"
-mkdir -p "$REPORTS_DIR"
-DATE=$(date '+%Y-%m-%d %H:%M:%S')
-
-# Create comprehensive HTML report
-report_html="$REPORTS_DIR/comprehensive-test-report.html"
-
-cat > "$report_html" << 'EOF'
+# Generate HTML report
+log_report "Generazione HTML report..."
+cat > "$REPORT_DIR/test-results.html" << 'EOF'
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CRM System - Comprehensive Test Report</title>
+    <title>CRM System - Test Results Dashboard</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .header { text-align: center; margin-bottom: 40px; }
-        .header h1 { color: #2c3e50; margin-bottom: 10px; }
-        .header .timestamp { color: #7f8c8d; }
-        .test-section { margin: 30px 0; padding: 20px; border: 1px solid #ecf0f1; border-radius: 8px; }
-        .test-section h2 { color: #34495e; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
-        .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
-        .status-passed { background: #2ecc71; color: white; }
-        .status-failed { background: #e74c3c; color: white; }
-        .status-warning { background: #f39c12; color: white; }
-        .metric { display: inline-block; margin: 10px 20px 10px 0; }
-        .metric-label { font-weight: bold; color: #34495e; }
-        .metric-value { color: #2c3e50; font-size: 18px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
-        .card { padding: 20px; border: 1px solid #ecf0f1; border-radius: 8px; background: #fafafa; }
-        .progress-bar { width: 100%; height: 20px; background: #ecf0f1; border-radius: 10px; overflow: hidden; }
-        .progress-fill { height: 100%; background: linear-gradient(90deg, #3498db, #2ecc71); transition: width 0.3s ease; }
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px; margin-bottom: 30px; }
+        .header h1 { margin: 0; font-size: 2.5em; }
+        .header p { margin: 10px 0 0 0; opacity: 0.9; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .card { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .card h3 { margin: 0 0 15px 0; font-size: 1.2em; }
+        .status { padding: 8px 15px; border-radius: 20px; font-weight: bold; display: inline-block; }
+        .status.success { background: #d4edda; color: #155724; }
+        .status.warning { background: #fff3cd; color: #856404; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .overall { grid-column: 1 / -1; text-align: center; }
+        .details { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .timestamp { color: #666; font-size: 0.9em; }
+        .log-section { margin-top: 20px; }
+        .log-section h4 { margin: 0 0 10px 0; }
+        .log-content { background: #f8f9fa; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 0.9em; max-height: 200px; overflow-y: auto; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🧪 CRM System - Comprehensive Test Report</h1>
-            <div class="timestamp">Generated on: DATE_PLACEHOLDER</div>
+            <h1>🧪 CRM System - Test Results</h1>
+            <p>FASE 5: Enterprise Testing Strategy Dashboard</p>
+            <p class="timestamp">Generated: TIMESTAMP_PLACEHOLDER</p>
         </div>
         
-        <div class="test-section">
-            <h2>📊 Test Summary</h2>
-            <div class="grid">
-                <div class="card">
-                    <h3>Unit Tests</h3>
-                    <span class="status-badge status-passed">COMPLETED</span>
-                    <div class="metric">
-                        <div class="metric-label">Status</div>
-                        <div class="metric-value">Ready</div>
-                    </div>
-                </div>
-                <div class="card">
-                    <h3>Integration Tests</h3>
-                    <span class="status-badge status-passed">COMPLETED</span>
-                    <div class="metric">
-                        <div class="metric-label">Status</div>
-                        <div class="metric-value">Ready</div>
-                    </div>
-                </div>
-                <div class="card">
-                    <h3>E2E Tests</h3>
-                    <span class="status-badge status-passed">COMPLETED</span>
-                    <div class="metric">
-                        <div class="metric-label">Status</div>
-                        <div class="metric-value">Ready</div>
-                    </div>
-                </div>
-                <div class="card">
-                    <h3>Performance Tests</h3>
-                    <span class="status-badge status-passed">COMPLETED</span>
-                    <div class="metric">
-                        <div class="metric-label">Status</div>
-                        <div class="metric-value">Ready</div>
-                    </div>
-                </div>
-                <div class="card">
-                    <h3>Security Tests</h3>
-                    <span class="status-badge status-passed">COMPLETED</span>
-                    <div class="metric">
-                        <div class="metric-label">Status</div>
-                        <div class="metric-value">Ready</div>
-                    </div>
-                </div>
+        <div class="grid">
+            <div class="card overall">
+                <h3>🎯 Overall Test Status</h3>
+                <div class="status OVERALL_STATUS_CLASS">OVERALL_STATUS_TEXT</div>
             </div>
         </div>
         
-        <div class="test-section">
-            <h2>📈 Overall Test Health</h2>
-            <div class="metric">
-                <div class="metric-label">FASE 5 Testing Strategy</div>
-                <div class="metric-value">Enterprise Ready</div>
+        <div class="grid">
+            <div class="card">
+                <h3>⚡ Unit Tests</h3>
+                <div class="status UNIT_STATUS_CLASS">UNIT_STATUS_TEXT</div>
+                <p>Backend & Frontend component testing</p>
             </div>
-            <div class="progress-bar">
-                <div class="progress-fill" style="width: 100%"></div>
+            
+            <div class="card">
+                <h3>🔗 Integration Tests</h3>
+                <div class="status INTEGRATION_STATUS_CLASS">INTEGRATION_STATUS_TEXT</div>
+                <p>API, Database & Service integration</p>
+            </div>
+            
+            <div class="card">
+                <h3>🎭 E2E Tests</h3>
+                <div class="status E2E_STATUS_CLASS">E2E_STATUS_TEXT</div>
+                <p>End-to-end user journey testing</p>
+            </div>
+            
+            <div class="card">
+                <h3>⚡ Performance Tests</h3>
+                <div class="status PERFORMANCE_STATUS_CLASS">PERFORMANCE_STATUS_TEXT</div>
+                <p>Load testing & performance metrics</p>
+            </div>
+            
+            <div class="card">
+                <h3>🛡️ Security Tests</h3>
+                <div class="status SECURITY_STATUS_CLASS">SECURITY_STATUS_TEXT</div>
+                <p>Vulnerability scanning & security audit</p>
             </div>
         </div>
         
-        <div class="test-section">
-            <h2>🔗 Available Reports</h2>
-            <ul>
-                <li>Backend Unit Tests: ./backend-unit-tests.log</li>
-                <li>Frontend Unit Tests: ./frontend-unit-tests.log</li>
-                <li>Integration Tests: ./integration-tests.json</li>
-                <li>E2E Tests: ./e2e-tests.log</li>
-                <li>Performance Tests: ./performance-tests.log</li>
-                <li>Security Tests: ./security-tests.json</li>
-            </ul>
-        </div>
-        
-        <div class="test-section">
-            <h2>🎉 FASE 5 Completion Status</h2>
-            <p><strong>Enterprise Testing Strategy:</strong> Successfully implemented with modular architecture, comprehensive test coverage, and automated reporting.</p>
+        <div class="details">
+            <h3>📋 Test Execution Details</h3>
+            <p><strong>Timestamp:</strong> TIMESTAMP_PLACEHOLDER</p>
+            <p><strong>Test Environment:</strong> Testing Pipeline (Ports 3100/3101)</p>
+            <p><strong>Report Location:</strong> ~/testing-workspace/reports/</p>
+            
+            <div class="log-section">
+                <h4>📄 Available Reports:</h4>
+                <div class="log-content">
+                    • Unit Tests: unit-summary.json<br>
+                    • Integration Tests: integration-summary.json<br>
+                    • E2E Tests: e2e-summary.json<br>
+                    • Performance Tests: performance-summary.json<br>
+                    • Security Tests: security-summary.json<br>
+                    • Overall Summary: test-results-summary.json
+                </div>
+            </div>
         </div>
     </div>
 </body>
 </html>
 EOF
 
-# Replace placeholder with actual date
-if command -v sed >/dev/null 2>&1; then
-    sed -i "s/DATE_PLACEHOLDER/$DATE/g" "$report_html" 2>/dev/null || {
-        # Fallback for systems where sed -i doesn't work
-        temp_file=$(mktemp)
-        sed "s/DATE_PLACEHOLDER/$DATE/g" "$report_html" > "$temp_file" && mv "$temp_file" "$report_html"
-    }
-fi
+# Replace placeholders in HTML
+get_status_class() {
+    case "$1" in
+        "true") echo "success" ;;
+        "false") echo "error" ;;
+        *) echo "warning" ;;
+    esac
+}
 
-log_success "Report completo generato: $report_html"
-log_info "Apri il report: file://$report_html"
-log_success "Report generation completato!"
+get_status_text() {
+    case "$1" in
+        "true") echo "PASSED ✅" ;;
+        "false") echo "FAILED ❌" ;;
+        *) echo "WARNING ⚠️" ;;
+    esac
+}
+
+# Update HTML with actual values
+sed -i "s/TIMESTAMP_PLACEHOLDER/$TIMESTAMP/g" "$REPORT_DIR/test-results.html"
+sed -i "s/OVERALL_STATUS_CLASS/$(get_status_class "$OVERALL_SUCCESS")/g" "$REPORT_DIR/test-results.html"
+sed -i "s/OVERALL_STATUS_TEXT/$(get_status_text "$OVERALL_SUCCESS")/g" "$REPORT_DIR/test-results.html"
+sed -i "s/UNIT_STATUS_CLASS/$(get_status_class "$UNIT_RESULT")/g" "$REPORT_DIR/test-results.html"
+sed -i "s/UNIT_STATUS_TEXT/$(get_status_text "$UNIT_RESULT")/g" "$REPORT_DIR/test-results.html"
+sed -i "s/INTEGRATION_STATUS_CLASS/$(get_status_class "$INTEGRATION_RESULT")/g" "$REPORT_DIR/test-results.html"
+sed -i "s/INTEGRATION_STATUS_TEXT/$(get_status_text "$INTEGRATION_RESULT")/g" "$REPORT_DIR/test-results.html"
+sed -i "s/E2E_STATUS_CLASS/$(get_status_class "$E2E_RESULT")/g" "$REPORT_DIR/test-results.html"
+sed -i "s/E2E_STATUS_TEXT/$(get_status_text "$E2E_RESULT")/g" "$REPORT_DIR/test-results.html"
+sed -i "s/PERFORMANCE_STATUS_CLASS/$(get_status_class "$PERFORMANCE_RESULT")/g" "$REPORT_DIR/test-results.html"
+sed -i "s/PERFORMANCE_STATUS_TEXT/$(get_status_text "$PERFORMANCE_RESULT")/g" "$REPORT_DIR/test-results.html"
+sed -i "s/SECURITY_STATUS_CLASS/$(get_status_class "$SECURITY_RESULT")/g" "$REPORT_DIR/test-results.html"
+sed -i "s/SECURITY_STATUS_TEXT/$(get_status_text "$SECURITY_RESULT")/g" "$REPORT_DIR/test-results.html"
+
+# Generate Markdown report
+log_report "Generazione Markdown report..."
+cat > "$REPORT_DIR/test-results.md" << EOF
+# 🧪 CRM System - Test Results Report
+
+**FASE 5: Enterprise Testing Strategy**
+
+---
+
+## 📊 Overall Status
+
+**Overall Test Status:** $(get_status_text "$OVERALL_SUCCESS")
+
+**Generated:** $TIMESTAMP
+
+---
+
+## 📋 Test Results Summary
+
+| Test Category | Status | Description |
+|---------------|--------|-------------|
+| ⚡ Unit Tests | $(get_status_text "$UNIT_RESULT") | Backend & Frontend component testing |
+| 🔗 Integration Tests | $(get_status_text "$INTEGRATION_RESULT") | API, Database & Service integration |
+| 🎭 E2E Tests | $(get_status_text "$E2E_RESULT") | End-to-end user journey testing |
+| ⚡ Performance Tests | $(get_status_text "$PERFORMANCE_RESULT") | Load testing & performance metrics |
+| 🛡️ Security Tests | $(get_status_text "$SECURITY_RESULT") | Vulnerability scanning & security audit |
+
+---
+
+## 📁 Report Files
+
+- **HTML Dashboard:** [test-results.html](./test-results.html)
+- **JSON Summary:** [test-results-summary.json](./test-results-summary.json)
+- **Individual Reports:**
+  - Unit Tests: [unit-summary.json](./unit-summary.json)
+  - Integration Tests: [integration-summary.json](./integration-summary.json)
+  - E2E Tests: [e2e-summary.json](./e2e-summary.json)
+  - Performance Tests: [performance-summary.json](./performance-summary.json)
+  - Security Tests: [security-summary.json](./security-summary.json)
+
+---
+
+## 🎯 Next Steps
+
+### If Tests Passed ✅
+- Review performance metrics
+- Check security recommendations
+- Proceed to production deployment
+
+### If Tests Failed ❌
+- Check individual test logs
+- Fix failing test cases
+- Re-run specific test suites
+- Update code and retry
+
+---
+
+*Generated by CRM DevOps Pipeline - FASE 5*
+EOF
+
+log_report "✅ Report generato con successo!"
+log_report "📄 HTML Report: $REPORT_DIR/test-results.html"
+log_report "📄 JSON Summary: $REPORT_DIR/test-results-summary.json"
+log_report "📄 Markdown Report: $REPORT_DIR/test-results.md"
+
+exit 0
