@@ -29,9 +29,9 @@ else
     exit 1
 fi
 
-# Test frontend response
-log_smoke "Test frontend response (3100)..."
-if curl -s --max-time 10 http://localhost:3100 >/dev/null 2>&1; then
+# Test frontend response (FIXED: porta 3000 invece di 3100)
+log_smoke "Test frontend response (3000)..."
+if curl -s --max-time 10 http://localhost:3000 >/dev/null 2>&1; then
     log_smoke "✅ Frontend response OK"
 else
     log_smoke "❌ Frontend response FAIL"
@@ -55,7 +55,7 @@ else
     log_smoke "⚠️ Test database non trovato"
 fi
 
-# Test port availability
+# Test port availability (FIXED: verifica porta 3000 invece di 3100)
 log_smoke "Verifica porte testing..."
 if netstat -ln | grep -q ":3101.*LISTEN"; then
     log_smoke "✅ Porta 3101 in ascolto"
@@ -64,10 +64,10 @@ else
     exit 1
 fi
 
-if netstat -ln | grep -q ":3100.*LISTEN"; then
-    log_smoke "✅ Porta 3100 in ascolto"
+if netstat -ln | grep -q ":3000.*LISTEN"; then
+    log_smoke "✅ Porta 3000 in ascolto"
 else
-    log_smoke "❌ Porta 3100 non in ascolto"
+    log_smoke "❌ Porta 3000 non in ascolto"
     exit 1
 fi
 
