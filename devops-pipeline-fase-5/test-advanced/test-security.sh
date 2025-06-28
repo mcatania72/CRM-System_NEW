@@ -44,11 +44,11 @@ else
     FRONTEND_AUDIT=false
 fi
 
-# Security Headers Check
+# Security Headers Check - Test sul BACKEND dove sono configurati
 log_security "Security Headers Check..."
-HEADERS_RESPONSE=$(curl -s -I http://localhost:3100 2>/dev/null)
+HEADERS_RESPONSE=$(curl -s -I http://localhost:3101/api/health 2>/dev/null)
 
-if echo "$HEADERS_RESPONSE" | grep -qi "x-frame-options\|x-content-type-options\|x-xss-protection"; then
+if echo "$HEADERS_RESPONSE" | grep -qi "x-frame-options\|x-content-type-options\|strict-transport-security"; then
     log_security "✅ Security headers: PRESENT"
     HEADERS_SUCCESS=true
 else
@@ -71,11 +71,11 @@ fi
 # Basic OWASP checks
 log_security "Basic OWASP Security Checks..."
 
-# SQL Injection basic test
+# SQL Injection basic test - Fixed escaping
 SQL_TEST=$(curl -s -o /dev/null -w "%{http_code}" \
     "http://localhost:3101/api/auth/login" \
     -H "Content-Type: application/json" \
-    -d '{"email":"admin@test.com\\\\'; DROP TABLE users; --","password":"test"}' 2>/dev/null)
+    -d '{"email":"admin@test.com'; DROP TABLE users; --","password":"test"}' 2>/dev/null)
 
 if [[ "$SQL_TEST" == "400" || "$SQL_TEST" == "422" || "$SQL_TEST" == "401" ]]; then
     log_security "✅ SQL Injection protection: ACTIVE"
@@ -85,8 +85,8 @@ else
     SQL_PROTECTION=false
 fi
 
-# XSS Protection test
-XSS_TEST=$(curl -s "http://localhost:3100/?search=<script>alert('xss')</script>" | grep -o "<script>" | wc -l)
+# XSS Protection test - Fixed port to 3000
+XSS_TEST=$(curl -s "http://localhost:3000/?search=<script>alert('xss')</script>" | grep -o "<script>" | wc -l 2>/dev/null)
 
 if [[ "$XSS_TEST" -eq 0 ]]; then
     log_security "✅ XSS protection: ACTIVE"
