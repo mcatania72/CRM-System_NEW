@@ -24,9 +24,11 @@ log_unit "Esecuzione Unit Tests..."
 log_unit "Backend Unit Tests..."
 cd "$HOME/devops/CRM-System/backend" || exit 1
 
-# FIXED: Gestione corretta dei codici di uscita
+# FIXED: Uso PIPESTATUS per catturare l'exit code corretto di npm test
 npm test 2>&1 | tee "$HOME/testing-workspace/reports/unit-backend.log"
-BACKEND_EXIT_CODE=$?
+BACKEND_EXIT_CODE=${PIPESTATUS[0]}
+
+log_unit "DEBUG: Backend exit code = $BACKEND_EXIT_CODE"
 
 if [[ $BACKEND_EXIT_CODE -eq 0 ]]; then
     log_unit "✅ Backend unit tests PASSED"
@@ -49,14 +51,17 @@ fi
 log_unit "Frontend Unit Tests..."
 cd "$HOME/devops/CRM-System/frontend" || exit 1
 
+# FIXED: Uso PIPESTATUS per catturare l'exit code corretto di npm test
 npm test 2>&1 | tee "$HOME/testing-workspace/reports/unit-frontend.log"
-FRONTEND_EXIT_CODE=$?
+FRONTEND_EXIT_CODE=${PIPESTATUS[0]}
+
+log_unit "DEBUG: Frontend exit code = $FRONTEND_EXIT_CODE"
 
 if [[ $FRONTEND_EXIT_CODE -eq 0 ]]; then
     log_unit "✅ Frontend unit tests PASSED"
     FRONTEND_SUCCESS=true
 elif [[ $FRONTEND_EXIT_CODE -eq 1 ]]; then
-    # Check if it's "no tests found" vs real failure
+    # Check if it's "no test files found" vs real failure
     if grep -q "No test files found" "$HOME/testing-workspace/reports/unit-frontend.log"; then
         log_unit "⚠️ Frontend: No test files found (OK per setup fase)"
         FRONTEND_SUCCESS=true
