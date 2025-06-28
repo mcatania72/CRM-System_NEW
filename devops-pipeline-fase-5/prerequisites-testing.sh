@@ -1,11 +1,9 @@
 #!/bin/bash
 
 # ============================================
-# CRM System - Testing Prerequisites v5.0
+# CRM System - Testing Prerequisites v5.1
 # FASE 5: Testing Avanzato Prerequisites
 # ============================================
-
-set -e  # Exit on any error
 
 # Color codes for output
 RED='\033[0;31m'
@@ -71,38 +69,59 @@ install_npm_global() {
     fi
     
     log_info "Installazione $package..."
-    if npm install -g "$package"; then
+    if npm install -g "$package" 2>/dev/null; then
         log_success "✅ $package installato con successo"
         return 0
     else
-        log_error "❌ Errore installazione $package"
+        log_warning "⚠️ Errore installazione $package (continuando...)"
         return 1
     fi
 }
 
-# Function to install system package if not exists
-install_system_package() {
-    local package="$1"
-    local check_command="$2"
-    
-    if command_exists "$check_command"; then
-        log_success "✅ $package già installato"
-        return 0
-    fi
+# Function to install system package with error handling
+install_system_packages() {
+    local packages=("$@")
+    local failed_packages=()
+    local success_count=0
     
     if [[ "$CHECK_MODE" == "true" ]]; then
-        log_warning "⚠️ $package non trovato"
-        return 1
+        for package in "${packages[@]}"; do
+            if dpkg -l | grep -q "^ii.*$package "; then
+                log_success "✅ $package installato"
+                ((success_count++))
+            else
+                log_warning "⚠️ $package non trovato"
+            fi
+        done
+        return $success_count
     fi
     
-    log_info "Installazione $package..."
-    if sudo apt-get update && sudo apt-get install -y "$package"; then
-        log_success "✅ $package installato con successo"
-        return 0
-    else
-        log_error "❌ Errore installazione $package"
-        return 1
+    log_info "Aggiornamento package index..."
+    if ! sudo apt-get update >/dev/null 2>&1; then
+        log_warning "⚠️ Errore aggiornamento package index"
     fi
+    
+    for package in "${packages[@]}"; do
+        if dpkg -l | grep -q "^ii.*$package "; then
+            log_success "✅ $package già installato"
+            ((success_count++))
+        else
+            log_info "Installazione $package..."
+            if sudo apt-get install -y "$package" >/dev/null 2>&1; then
+                log_success "✅ $package installato con successo"
+                ((success_count++))
+            else
+                log_warning "⚠️ Errore installazione $package (opzionale)"
+                failed_packages+=("$package")
+            fi
+        fi
+    done
+    
+    if [[ ${#failed_packages[@]} -gt 0 ]]; then
+        log_warning "⚠️ Pacchetti non installati: ${failed_packages[*]}"
+    fi
+    
+    return $success_count
 }
 
 # Check basic prerequisites
@@ -143,6 +162,90 @@ else
     log_warning "⚠️ Git non trovato"
 fi
 
+# Install System Dependencies for Playwright Browsers
+log_info "=== Installazione Dipendenze Sistema per Playwright ==="
+
+# Core browser dependencies
+CORE_DEPS=(
+    "libnss3"
+    "libatk-bridge2.0-0" 
+    "libdrm2"
+    "libxkbcommon0"
+    "libxcomposite1"
+    "libxdamage1"
+    "libxrandr2"
+    "libgbm1"
+    "libxss1"
+    "libasound2"
+)
+
+log_info "Installazione dipendenze core browser..."
+install_system_packages "${CORE_DEPS[@]}"
+
+# GTK4 and Graphene (for WebKit)
+GTK_DEPS=(
+    "libgtk-4-1"
+    "libgraphene-1.0-0"
+    "libwoff1"
+    "libevent-2.1-7"
+)
+
+log_info "Installazione dipendenze GTK4..."
+install_system_packages "${GTK_DEPS[@]}"
+
+# GStreamer (for audio/video)
+GSTREAMER_DEPS=(
+    "gstreamer1.0-base"
+    "gstreamer1.0-plugins-base"
+    "gstreamer1.0-plugins-good"
+    "libgstreamer1.0-0"
+    "libgstreamer-plugins-base1.0-0"
+)
+
+log_info "Installazione dipendenze GStreamer..."
+install_system_packages "${GSTREAMER_DEPS[@]}"
+
+# Flite (speech synthesis) - optional
+FLITE_DEPS=(
+    "flite1-dev"
+    "libflite1"
+)
+
+log_info "Installazione dipendenze Flite (opzionali)..."
+install_system_packages "${FLITE_DEPS[@]}"
+
+# WebP and multimedia
+MULTIMEDIA_DEPS=(
+    "libwebp6"
+    "libwebpdemux2"
+    "libwebpmux3"
+    "libavif13"
+)
+
+log_info "Installazione dipendenze multimedia..."
+install_system_packages "${MULTIMEDIA_DEPS[@]}"
+
+# Graphics and OpenGL
+GRAPHICS_DEPS=(
+    "libgles2-mesa"
+    "libx264-160"
+)
+
+log_info "Installazione dipendenze grafiche..."
+install_system_packages "${GRAPHICS_DEPS[@]}"
+
+# Other missing libraries
+OTHER_DEPS=(
+    "libharfbuzz-icu0"
+    "libenchant-2-2"
+    "libsecret-1-0"
+    "libhyphen0"
+    "libmanette-0.2-0"
+)
+
+log_info "Installazione altre dipendenze..."
+install_system_packages "${OTHER_DEPS[@]}"
+
 # Install Testing Tools
 log_info "=== Installazione Testing Tools ==="
 
@@ -162,8 +265,13 @@ fi
 install_npm_global "@playwright/test" "playwright"
 
 if command_exists playwright && [[ "$CHECK_MODE" == "false" ]]; then
-    log_info "Installazione browser Playwright..."
-    npx playwright install chromium firefox webkit 2>/dev/null || log_warning "⚠️ Errore installazione browser Playwright"
+    log_info "Installazione browser Playwright con dipendenze sistema..."
+    if npx playwright install --with-deps >/dev/null 2>&1; then
+        log_success "✅ Browser Playwright installati con dipendenze"
+    else
+        log_warning "⚠️ Errore installazione browser Playwright, provo fallback..."
+        npx playwright install chromium >/dev/null 2>&1 || log_warning "⚠️ Fallback installazione fallito"
+    fi
 fi
 
 # Artillery (Performance Testing)
@@ -175,24 +283,6 @@ install_npm_global "@lhci/cli" "lhci"
 # Additional testing utilities
 install_npm_global "newman" "newman"  # Postman collection runner
 install_npm_global "@pact-foundation/pact" "pact"  # Contract testing (optional)
-
-# System dependencies for browser testing
-log_info "=== Verifica Dipendenze Sistema per Browser Testing ==="
-
-# Dependencies for Playwright browsers
-SYSTEM_DEPS=("libnss3" "libatk-bridge2.0-0" "libxss1" "libasound2")
-for dep in "${SYSTEM_DEPS[@]}"; do
-    if dpkg -l | grep -q "$dep"; then
-        log_success "✅ $dep presente"
-    else
-        if [[ "$CHECK_MODE" == "false" ]]; then
-            log_info "Installazione $dep..."
-            sudo apt-get install -y "$dep" >/dev/null 2>&1 || log_warning "⚠️ Errore installazione $dep"
-        else
-            log_warning "⚠️ $dep non trovato"
-        fi
-    fi
-done
 
 # Install additional testing utilities if not in check mode
 if [[ "$CHECK_MODE" == "false" ]]; then
@@ -226,6 +316,31 @@ if [[ "$CHECK_MODE" == "false" ]]; then
     fi
     
     cd - >/dev/null
+fi
+
+# Create E2E config optimized for speed and reliability  
+if [[ "$CHECK_MODE" == "false" ]] && command_exists playwright; then
+    log_info "=== Configurazione E2E Testing Ottimizzata ==="
+    
+    # Create optimized E2E test
+    mkdir -p ~/testing-workspace/e2e
+    cat > ~/testing-workspace/e2e/quick-test.spec.js << 'EOF'
+const { test, expect } = require('@playwright/test');
+
+test.describe('CRM Quick Smoke Tests', () => {
+  test('homepage loads', async ({ page }) => {
+    await page.goto('http://localhost:3000', { timeout: 10000 });
+    await expect(page).toHaveTitle(/CRM|Login/, { timeout: 5000 });
+  });
+
+  test('login form exists', async ({ page }) => {
+    await page.goto('http://localhost:3000', { timeout: 10000 });
+    await expect(page.locator('input[type="email"], input[name="email"]')).toBeVisible({ timeout: 5000 });
+  });
+});
+EOF
+    
+    log_success "✅ Test E2E ottimizzati creati"
 fi
 
 # Check integration with previous phases
@@ -332,7 +447,8 @@ if [[ "$SUCCESS_PERCENTAGE" -ge 80 ]]; then
     echo ""
     echo "Prossimi passi:"
     echo "1. ./deploy-testing.sh start    # Avvia testing pipeline"
-    echo "2. ./test-advanced.sh          # Esegui test suite completa"
+    echo "2. ./test-advanced.sh unit      # Test veloci unit"
+    echo "3. ./test-advanced.sh e2e-fast  # Test E2E ottimizzati"
     echo ""
     echo "Testing avanzato pronto! 🧪"
     exit 0
