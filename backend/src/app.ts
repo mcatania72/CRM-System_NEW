@@ -106,7 +106,7 @@ AppDataSource.initialize()
         app.listen(PORT, '0.0.0.0', () => {
             console.log(`Server in esecuzione sulla porta ${PORT}`);
             console.log(`Health check: http://localhost:${PORT}/api/health`);
-            console.log(`Rate limiting: ${limiter.skip ? 'Disabled for localhost' : 'Enabled'}`);
+            console.log(`Rate limiting: Enhanced for testing (10k requests/window, localhost bypass)`);
         });
     })
     .catch(error => {
