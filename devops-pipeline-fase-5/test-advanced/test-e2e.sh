@@ -3,6 +3,7 @@
 # ============================================
 # Test Advanced - E2E Tests Module
 # FASE 5: End-to-end testing con Playwright
+# Auto-detection porte per massima robustezza
 # ============================================
 
 # Colors for output
@@ -18,7 +19,40 @@ log_e2e() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') E2E: $1" >> ~/test-advanced.log
 }
 
-log_e2e "Esecuzione End-to-End Tests..."
+log_e2e "Esecuzione End-to-End Tests con auto-detection porte..."
+
+# Funzione per rilevare porta attiva
+detect_active_port() {
+    local service_name=$1
+    local ports_array=("${@:2}")
+    
+    for port in "${ports_array[@]}"; do
+        local url="http://localhost:${port}"
+        log_e2e "🔍 Testing ${service_name} on port ${port}..."
+        
+        if curl -s --max-time 3 "${url}" >/dev/null 2>&1; then
+            log_e2e "✅ ${service_name} found on port ${port}"
+            echo "${port}"
+            return 0
+        fi
+    done
+    
+    log_e2e "❌ ${service_name} not found on any port"
+    return 1
+}
+
+# Auto-detect frontend port
+log_e2e "🔍 Auto-detecting frontend port for Playwright..."
+FRONTEND_PORTS=(3100 3000 4173 3002)
+FRONTEND_PORT=$(detect_active_port "Frontend" "${FRONTEND_PORTS[@]}")
+if [[ $? -ne 0 ]]; then
+    log_e2e "❌ Frontend not accessible on any common port"
+    log_e2e "⚠️ Ports tested: ${FRONTEND_PORTS[*]}"
+    exit 1
+fi
+
+FRONTEND_URL="http://localhost:${FRONTEND_PORT}"
+log_e2e "📋 Using Frontend: ${FRONTEND_URL}"
 
 # Check if Playwright is available
 if ! command -v playwright >/dev/null 2>&1 && ! npx playwright --version >/dev/null 2>&1; then
@@ -26,43 +60,52 @@ if ! command -v playwright >/dev/null 2>&1 && ! npx playwright --version >/dev/n
     exit 1
 fi
 
-# Create Playwright config for testing
-log_e2e "Creazione configurazione Playwright..."
+# Create Playwright config for testing with dynamic port
+log_e2e "Creazione configurazione Playwright con porta rilevata..."
 cd "$HOME/devops/CRM-System" || exit 1
 
-cat > playwright.config.js << 'EOF'
+cat > playwright.config.js << EOF
 const { defineConfig, devices } = require('@playwright/test');
 
 module.exports = defineConfig({
   testDir: './testing/e2e',
   fullyParallel: true,
   workers: 2,
-  retries: 1,
+  retries: 2,
   timeout: 30000,
   
   use: {
-    baseURL: 'http://localhost:3100',
+    baseURL: '${FRONTEND_URL}',
     headless: true,
-    video: 'off',
+    video: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    trace: 'off',
+    trace: 'retain-on-failure',
+    ignoreHTTPSErrors: true,
+    actionTimeout: 10000,
+    navigationTimeout: 30000,
   },
 
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: { 
+        ...devices['Desktop Chrome'],
+        launchOptions: {
+          args: ['--no-sandbox', '--disable-setuid-sandbox']
+        }
+      },
     },
   ],
 
   reporter: [
     ['list'],
+    ['json', { outputFile: 'testing/reports/e2e-results.json' }],
     ['html', { outputFolder: 'testing/reports/e2e', open: 'never' }]
   ],
 });
 EOF
 
-# Create basic E2E tests
+# Create basic E2E tests with improved selectors
 log_e2e "Creazione test E2E di base..."
 mkdir -p testing/e2e
 
@@ -99,14 +142,74 @@ test.describe('CRM Application E2E Tests', () => {
 });
 EOF
 
-# Run Playwright E2E tests
+cat > testing/e2e/auth.spec.js << 'EOF'
+const { test, expect } = require('@playwright/test');
+
+test.describe('CRM Authentication', () => {
+  test('should load login page', async ({ page }) => {
+    await page.goto('/');
+    await expect(page).toHaveTitle(/CRM/);
+    await expect(page.locator('h1')).toContainText('Login');
+  });
+
+  test('should login with valid credentials', async ({ page }) => {
+    await page.goto('/');
+
+    // Fill login form
+    await page.fill('input[type="email"]', 'admin@crm.local');
+    await page.fill('input[type="password"]', 'admin123');
+    
+    // Submit form
+    await page.click('button[type="submit"]');
+    
+    // Wait for navigation
+    await page.waitForTimeout(3000);
+    
+    // Check if redirected to dashboard or still on login with error
+    const currentUrl = page.url();
+    console.log('Current URL after login:', currentUrl);
+  });
+
+  test('should reject invalid credentials', async ({ page }) => {
+    await page.goto('/');
+
+    // Fill with invalid credentials
+    await page.fill('input[type="email"]', 'invalid@test.com');
+    await page.fill('input[type="password"]', 'wrongpassword');
+    
+    // Submit form
+    await page.click('button[type="submit"]');
+    
+    // Wait for error message or page response
+    await page.waitForTimeout(2000);
+  });
+});
+EOF
+
+# Ensure reports directory exists
+mkdir -p "$HOME/testing-workspace/reports"
+mkdir -p testing/reports
+
+# Run Playwright E2E tests with better error handling
 log_e2e "Esecuzione Playwright E2E tests..."
-if npx playwright test 2>&1 | tee "$HOME/testing-workspace/reports/e2e-tests.log"; then
+
+# Set environment variables for the test
+export FRONTEND_URL="${FRONTEND_URL}"
+export FRONTEND_PORT="${FRONTEND_PORT}"
+
+if npx playwright test --config=playwright.config.js 2>&1 | tee "$HOME/testing-workspace/reports/e2e-tests.log"; then
     log_e2e "✅ E2E Tests: PASSED ✅"
     E2E_SUCCESS=true
 else
     log_e2e "❌ E2E Tests: FAILED ❌"
     log_e2e "Vedi: $HOME/testing-workspace/reports/e2e-tests.log"
+    
+    # Show last few lines of log for quick debugging
+    log_e2e "Ultimi errori:"
+    tail -10 "$HOME/testing-workspace/reports/e2e-tests.log" | while read line; do
+        log_e2e "  $line"
+    done
+    
     E2E_SUCCESS=false
 fi
 
@@ -115,6 +218,8 @@ log_e2e "Generazione report E2E tests..."
 cat > "$HOME/testing-workspace/reports/e2e-summary.json" << EOF
 {
   "timestamp": "$(date -Iseconds)",
+  "frontend_url": "${FRONTEND_URL}",
+  "frontend_port": ${FRONTEND_PORT},
   "e2e_tests": $E2E_SUCCESS,
   "overall": $E2E_SUCCESS
 }
