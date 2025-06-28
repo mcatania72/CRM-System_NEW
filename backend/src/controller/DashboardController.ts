@@ -84,10 +84,10 @@ export class DashboardController {
             // Trend mensile clienti (ultimi 6 mesi)
             const customerTrend = await customerRepository
                 .createQueryBuilder('customer')
-                .select(`strftime('%Y-%m', customer.createdAt)`, 'month')
+                .select(`TO_CHAR(customer.createdAt, 'YYYY-MM')`, 'month')
                 .addSelect('COUNT(*)', 'count')
                 .where('customer.createdAt >= :sixMonthsAgo', { 
-                    sixMonthsAgo: new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000) 
+                    sixMonthsAgo: new Date(new Date().setMonth(new Date().getMonth() - 6)) 
                 })
                 .groupBy('month')
                 .orderBy('month', 'ASC')
@@ -96,12 +96,12 @@ export class DashboardController {
             // Performance vendite mensile
             const salesPerformance = await opportunityRepository
                 .createQueryBuilder('opportunity')
-                .select(`strftime('%Y-%m', opportunity.actualCloseDate)`, 'month')
+                .select(`TO_CHAR(opportunity.actualCloseDate, 'YYYY-MM')`, 'month')
                 .addSelect('COUNT(*)', 'count')
                 .addSelect('SUM(opportunity.value)', 'totalValue')
                 .where('opportunity.stage = :stage', { stage: OpportunityStage.CLOSED_WON })
                 .andWhere('opportunity.actualCloseDate >= :sixMonthsAgo', { 
-                    sixMonthsAgo: new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000) 
+                    sixMonthsAgo: new Date(new Date().setMonth(new Date().getMonth() - 6)) 
                 })
                 .groupBy('month')
                 .orderBy('month', 'ASC')

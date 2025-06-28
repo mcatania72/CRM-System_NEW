@@ -14,7 +14,7 @@ import interactionRoutes from './routes/interactions';
 import dashboardRoutes from './routes/dashboard';
 
 const app = express();
-const PORT = parseInt(process.env.PORT || '3001', 10); // Fix: assicura che sia number
+const PORT = parseInt(process.env.PORT || '4001', 10); // Fix: assicura che sia number
 
 // Rate limiting - Testing-friendly configuration
 const limiter = rateLimit({
