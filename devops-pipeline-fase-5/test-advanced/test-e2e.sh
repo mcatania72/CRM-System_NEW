@@ -21,31 +21,41 @@ log_e2e() {
 
 log_e2e "Esecuzione End-to-End Tests con auto-detection porte..."
 
-# Funzione per rilevare porta attiva
-detect_active_port() {
+# Funzione per rilevare porta attiva (NO LOGGING per evitare interferenze)
+detect_active_port_silent() {
     local service_name=$1
     local ports_array=("${@:2}")
     
     for port in "${ports_array[@]}"; do
         local url="http://localhost:${port}"
-        log_e2e "🔍 Testing ${service_name} on port ${port}..."
         
         if curl -s --max-time 3 "${url}" >/dev/null 2>&1; then
-            log_e2e "✅ ${service_name} found on port ${port}"
             echo "${port}"
             return 0
         fi
     done
     
-    log_e2e "❌ ${service_name} not found on any port"
     return 1
 }
 
 # Auto-detect frontend port
 log_e2e "🔍 Auto-detecting frontend port for Playwright..."
 FRONTEND_PORTS=(3100 3000 4173 3002)
-FRONTEND_PORT=$(detect_active_port "Frontend" "${FRONTEND_PORTS[@]}")
-if [[ $? -ne 0 ]]; then
+
+# Test each port with detailed logging
+FRONTEND_PORT=""
+for port in "${FRONTEND_PORTS[@]}"; do
+    log_e2e "🔍 Testing Frontend on port ${port}..."
+    if curl -s --max-time 3 "http://localhost:${port}" >/dev/null 2>&1; then
+        log_e2e "✅ Frontend found on port ${port}"
+        FRONTEND_PORT=${port}
+        break
+    else
+        log_e2e "❌ Frontend not found on port ${port}"
+    fi
+done
+
+if [[ -z "$FRONTEND_PORT" ]]; then
     log_e2e "❌ Frontend not accessible on any common port"
     log_e2e "⚠️ Ports tested: ${FRONTEND_PORTS[*]}"
     exit 1
@@ -64,7 +74,8 @@ fi
 log_e2e "Creazione configurazione Playwright con porta rilevata..."
 cd "$HOME/devops/CRM-System" || exit 1
 
-cat > playwright.config.js << EOF
+# Generate config file WITHOUT any logging interference
+cat > playwright.config.js << 'PLAYWRIGHT_CONFIG_EOF'
 const { defineConfig, devices } = require('@playwright/test');
 
 module.exports = defineConfig({
@@ -75,7 +86,7 @@ module.exports = defineConfig({
   timeout: 30000,
   
   use: {
-    baseURL: '${FRONTEND_URL}',
+    baseURL: 'FRONTEND_URL_PLACEHOLDER',
     headless: true,
     video: 'retain-on-failure',
     screenshot: 'only-on-failure',
@@ -103,7 +114,12 @@ module.exports = defineConfig({
     ['html', { outputFolder: 'testing/reports/e2e', open: 'never' }]
   ],
 });
-EOF
+PLAYWRIGHT_CONFIG_EOF
+
+# Replace placeholder with actual URL
+sed -i "s|FRONTEND_URL_PLACEHOLDER|${FRONTEND_URL}|g" playwright.config.js
+
+log_e2e "✅ Configurazione Playwright creata con baseURL: ${FRONTEND_URL}"
 
 # Create basic E2E tests with improved selectors
 log_e2e "Creazione test E2E di base..."
@@ -215,7 +231,7 @@ fi
 
 # Generate E2E test report
 log_e2e "Generazione report E2E tests..."
-cat > "$HOME/testing-workspace/reports/e2e-summary.json" << EOF
+cat > "$HOME/testing-workspace/reports/e2e-summary.json" << REPORT_EOF
 {
   "timestamp": "$(date -Iseconds)",
   "frontend_url": "${FRONTEND_URL}",
@@ -223,7 +239,7 @@ cat > "$HOME/testing-workspace/reports/e2e-summary.json" << EOF
   "e2e_tests": $E2E_SUCCESS,
   "overall": $E2E_SUCCESS
 }
-EOF
+REPORT_EOF
 
 if [[ "$E2E_SUCCESS" == true ]]; then
     log_e2e "✅ E2E tests completati con successo!"
