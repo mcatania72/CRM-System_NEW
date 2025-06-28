@@ -44,11 +44,21 @@ REPORTS_DIR="$HOME/devops/CRM-System/testing/reports"
 ARTIFACTS_DIR="$HOME/devops/CRM-System/testing/artifacts"
 mkdir -p "$REPORTS_DIR" "$ARTIFACTS_DIR"
 
-# Create Artillery config if not exists
+# Always use fresh config (force update)
 artillery_config="$ARTIFACTS_DIR/performance-test.yml"
-if [ ! -f "$artillery_config" ]; then
-    cp "$HOME/devops-pipeline-fase-5/config/artillery.config.yml" "$artillery_config"
+log_perf "Aggiornamento configurazione Artillery..."
+cp "$HOME/devops-pipeline-fase-5/config/artillery.config.yml" "$artillery_config"
+
+# Verify config ports are correct
+if grep -q "localhost:3100" "$artillery_config"; then
+    log_warning "Config contiene ancora porta 3100 - aggiornamento in corso..."
+    sed -i 's/localhost:3100/localhost:3000/g' "$artillery_config"
+    log_perf "Porte corrette: 3100 → 3000"
 fi
+
+# Display config summary for verification
+log_perf "Config verificato:"
+grep -E "target:|localhost:" "$artillery_config" | head -3
 
 # Run Artillery performance test
 log_perf "Avvio performance test con Artillery..."
@@ -56,6 +66,7 @@ if artillery run "$artillery_config" --output "$REPORTS_DIR/performance-results.
     log_success "Performance test completato"
 else
     log_error "Performance test fallito"
+    log_error "Vedi log: $REPORTS_DIR/performance-tests.log"
     exit 1
 fi
 
@@ -63,6 +74,7 @@ fi
 if [ -f "$REPORTS_DIR/performance-results.json" ]; then
     if artillery report "$REPORTS_DIR/performance-results.json" --output "$REPORTS_DIR/performance-report.html" 2>/dev/null; then
         log_success "Report HTML generato"
+        echo "Report generated: $REPORTS_DIR/performance-report.html"
     else
         log_warning "Report HTML non generato"
     fi
@@ -87,6 +99,14 @@ if [ -f "$REPORTS_DIR/performance-results.json" ]; then
             console.log('0');
         }
     " 2>/dev/null || echo "0")
+    
+    # Debug: Show raw results if metrics are zero
+    if [ "$avg_response_time" -eq 0 ] && [ "$requests_per_sec" -eq 0 ]; then
+        log_warning "Metriche zero rilevate - debug info:"
+        log_perf "Dimensione file results: $(stat -c%s "$REPORTS_DIR/performance-results.json" 2>/dev/null || echo "0") bytes"
+        log_perf "Prime righe del file:"
+        head -10 "$REPORTS_DIR/performance-results.json" 2>/dev/null || log_error "File results non leggibile"
+    fi
     
     log_perf "Average Response Time: ${avg_response_time}ms"
     log_perf "Requests per Second: ${requests_per_sec}"
@@ -115,5 +135,6 @@ if [ -f "$REPORTS_DIR/performance-results.json" ]; then
     fi
 else
     log_error "Performance Tests: FAILED ❌"
+    log_error "File results non trovato: $REPORTS_DIR/performance-results.json"
     exit 1
 fi
