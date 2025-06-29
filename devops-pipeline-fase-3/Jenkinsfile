@@ -1,26 +1,43 @@
-// Jenkinsfile Semplificato per Debug
+// Jenkinsfile per la FASE 3: CI/CD Base con PostgreSQL (Versione Pulita)
 
 pipeline {
     agent any
 
+    environment {
+        COMPOSE_FILE = 'devops-pipeline-fase-2/docker-compose.yml'
+    }
+
     stages {
         stage('Checkout') {
             steps {
-                cleanWs()
-                git url: 'https://github.com/mcatania72/CRM-System_NEW.git', branch: 'main'
+                script {
+                    echo '1. Clonazione del repository...'
+                    cleanWs()
+                    git url: 'https://github.com/mcatania72/CRM-System_NEW.git', branch: 'main'
+                }
             }
         }
 
-        stage('Build and Minimal Test') {
+        stage('Environment Validation') {
             steps {
                 script {
-                    echo 'Avvio container...'
-                    sh "docker-compose -f devops-pipeline-fase-2/docker-compose.yml up --build -d"
+                    echo '2. Verifica dei prerequisiti sull agente Jenkins...'
+                    sh 'chmod +x devops-pipeline-fase-2/prerequisites-docker.sh'
+                    sh './devops-pipeline-fase-2/prerequisites-docker.sh'
+                }
+            }
+        }
+
+        stage('Build and Test with Docker Compose') {
+            steps {
+                script {
+                    echo '3. Avvio dell intera applicazione con Docker Compose...'
+                    sh "docker-compose -f ${env.COMPOSE_FILE} up --build -d"
                     
-                    echo 'Attendo 30 secondi...'
+                    echo 'Attendo 30 secondi per la stabilizzazione dei servizi...'
                     sleep 30
 
-                    echo 'Eseguo lo script di test semplificato...'
+                    echo '4. Esecuzione dei test di validazione sui container...'
                     sh 'chmod +x devops-pipeline-fase-2/test-containers.sh'
                     sh './devops-pipeline-fase-2/test-containers.sh'
                 }
@@ -31,8 +48,8 @@ pipeline {
     post {
         always {
             script {
-                echo 'Pulizia ambiente...'
-                sh "docker-compose -f devops-pipeline-fase-2/docker-compose.yml down --volumes"
+                echo '5. Pulizia dell ambiente Docker...'
+                sh "docker-compose -f ${env.COMPOSE_FILE} down --volumes"
             }
         }
     }
