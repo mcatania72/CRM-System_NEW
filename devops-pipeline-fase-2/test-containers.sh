@@ -34,35 +34,35 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
     log "ERROR: $1"
 }
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+    log "WARNING: $1"
+}
 
 # --- FUNZIONI DI TEST ---
 
-# Verifica che tutti i servizi definiti nel compose siano attivi e healthy
 check_container_health() {
     print_status "Verifica dello stato di salute dei container..."
     
-    # Ottiene la lista dei servizi dal file compose
     services=$(docker-compose -f "$COMPOSE_FILE" config --services)
     all_healthy=true
 
     for service in $services; do
-        # Controlla lo stato del container
-        state=$(docker-compose -f "$COMPOSE_FILE" ps -q "$service" | xargs docker inspect -f '{{.State.Status}}')
+        state=$(docker-compose -f "$COMPOSE_FILE" ps -q "$service" | xargs docker inspect -f '{{.State.Status}}' 2>/dev/null || echo "error")
         if [ "$state" != "running" ]; then
             print_error "✗ Servizio '$service' non è in esecuzione (stato: $state)."
             all_healthy=false
             continue
         fi
 
-        # Controlla l'health check, se definito
-        health=$(docker-compose -f "$COMPOSE_FILE" ps -q "$service" | xargs docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}not-defined{{end}}')
+        health=$(docker-compose -f "$COMPOSE_FILE" ps -q "$service" | xargs docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}not-defined{{end}}' 2>/dev/null || echo "error")
         case "$health" in
             "healthy")
                 print_success "✓ Servizio '$service' è in esecuzione e healthy."
                 ;;
             "starting")
-                print_warning "Servizio '$service' è in fase di avvio..."
-                # Potremmo aggiungere un loop di attesa qui se necessario
+                print_warning "✗ Servizio '$service' è ancora in fase di avvio (starting). Considerato non healthy per il test."
+                all_healthy=false
                 ;;
             "not-defined")
                 print_success "✓ Servizio '$service' è in esecuzione (nessun health check definito)."
@@ -80,25 +80,24 @@ check_container_health() {
     return 0
 }
 
-# Esegue i test unitari all'interno dei container (se configurato nel Dockerfile)
-run_tests_in_container() {
-    print_status "Esecuzione dei test unitari all'interno del container backend..."
+run_api_login_test() {
+    print_status "Esecuzione API Login Test..."
     
-    # Questo comando esegue 'npm test' nel container 'backend' già in esecuzione.
-    # Richiede che le devDependencies siano disponibili nell'immagine.
-    # Nota: il nostro Dockerfile attuale le rimuove, quindi questo è un esempio per il futuro.
-    # Per ora, ci limitiamo a verificare che il servizio sia attivo.
-    
-    # Esempio futuro:
-    # if docker-compose -f "$COMPOSE_FILE" exec -T backend npm test; then
-    #     print_success "✓ Test unitari del backend superati all'interno del container."
-    # else
-    #     print_error "✗ Test unitari del backend falliti."
-    #     return 1
-    # fi
-    
-    print_success "✓ (Simulazione) Test all'interno dei container superati."
-    return 0
+    # Eseguiamo una richiesta di login direttamente al backend per bypassare il browser
+    # e verificare la comunicazione backend-db.
+    response=$(curl -s -o /dev/null -w "%{\http_code}" \
+        -X POST http://localhost:4001/api/auth/login \
+        -H "Content-Type: application/json" \
+        -d '{"email":"admin@crm.local","password":"admin123"}')
+
+    if [ "$response" -eq 200 ]; then
+        print_success "✓ API Login Test superato (HTTP $response)."
+        return 0
+    else
+        print_error "✗ API Login Test fallito (HTTP $response)."
+        print_warning "Questo potrebbe indicare un problema di comunicazione backend-db o credenziali errate."
+        return 1
+    fi
 }
 
 # --- SCRIPT PRINCIPALE ---
@@ -112,10 +111,13 @@ echo -e "${NC}"
 rm -f "$LOG_FILE"
 failed_tests=()
 
-if ! check_container_health; then failed_tests+=("Health Check Container"); fi
-if ! run_tests_in_container; then failed_tests+=("In-Container Tests"); fi
+# Attende un po' per la stabilizzazione dei servizi prima dei test
+print_status "Attendo 15 secondi per la stabilizzazione dei servizi..."
+sleep 15
 
-# Riepilogo finale
+if ! check_container_health; then failed_tests+=("Health Check Container"); fi
+if ! run_api_login_test; then failed_tests+=("API Login Test"); fi
+
 echo -e "\n=======================================\n   RIEPILOGO TEST CONTAINER\n======================================="
 if [ ${#failed_tests[@]} -eq 0 ]; then
     print_success "✓ Tutti i test sui container sono stati completati con successo!"
