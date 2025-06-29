@@ -41,7 +41,7 @@ pipeline {
                                 // Usiamo lo scanner di SonarQube che Jenkins conosce.
                                 // Assicurati che sia installato tramite Manage Jenkins -> Global Tool Configuration
                                 def scannerHome = tool 'SonarScanner'
-                                sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectBaseDir=."
+                                sh "${scannerHome}/bin/sonar-scanner -Dproject.settings=devops-pipeline-fase-4/security/sonarqube-config.properties"
                             }
                         }
                     }
