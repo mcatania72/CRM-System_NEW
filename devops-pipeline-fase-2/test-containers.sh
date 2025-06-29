@@ -85,10 +85,7 @@ run_api_login_test() {
     
     # Eseguiamo una richiesta di login direttamente al backend per bypassare il browser
     # e verificare la comunicazione backend-db.
-    response=$(curl -s -o /dev/null -w "%{\http_code}" \
-        -X POST http://localhost:4001/api/auth/login \
-        -H "Content-Type: application/json" \
-        -d '{"email":"admin@crm.local","password":"admin123"}')
+    response=$(curl -s -o /dev/null -w "%{\http_code}"         -X POST http://localhost:4001/api/auth/login         -H "Content-Type: application/json"         -d '{"email":"admin@crm.local","password":"admin123"}')
 
     if [ "$response" -eq 200 ]; then
         print_success "✓ API Login Test superato (HTTP $response)."
