@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Test Containers Script - FASE 2 (Refactored for PostgreSQL)
+# Test Containers Script - FASE 2 (Refactored for PostgreSQL) - VERSIONE CORRETTA
 # Esegue test di validazione sull'ambiente containerizzato.
 
 set -e
