@@ -1,4 +1,4 @@
-// Jenkinsfile per la FASE 5: Testing Avanzato (Parte B: E2E)
+// Jenkinsfile per la FASE 5: Testing Avanzato (Parte B: E2E) - CORRETTO
 
 pipeline {
     agent any
@@ -19,10 +19,10 @@ pipeline {
             steps {
                 script {
                     echo 'Esecuzione test unitari e generazione report di coverage...'
-                    sh 'docker run --rm -v $(pwd)/backend:/app -w /app node:18-alpine npm install'
+                    sh 'docker run --rm -v $(pwd)/backend:/app -w /app node:18-alpine npm ci'
                     sh 'docker run --rm -v $(pwd)/backend:/app -w /app node:18-alpine npm test'
                     
-                    sh 'docker run --rm -v $(pwd)/frontend:/app -w /app node:18-alpine npm install'
+                    sh 'docker run --rm -v $(pwd)/frontend:/app -w /app node:18-alpine npm ci'
                     sh 'docker run --rm -v $(pwd)/frontend:/app -w /app node:18-alpine npm test'
                 }
             }
@@ -68,14 +68,13 @@ pipeline {
                     sh './devops-pipeline-fase-2/test-containers.sh'
 
                     echo 'Esecuzione dei test End-to-End con Playwright...'
-                    // Usiamo un container con le dipendenze di Playwright per eseguire i test
-                    // Montiamo la directory del frontend e la rete dei container
+                    // COMANDO CORRETTO E ROBUSTO
                     sh '''
                     docker run --rm \
                         -v $(pwd)/frontend:/app \
                         -w /app \
                         --network=devops-pipeline-fase-2_default \
-                        mcr.microsoft.com/playwright:v1.40.0 /bin/bash -c "npm install && npx playwright test"
+                        mcr.microsoft.com/playwright:v1.40.0 /bin/bash -c "npm ci && npx playwright test"
                     '''
                 }
             }
