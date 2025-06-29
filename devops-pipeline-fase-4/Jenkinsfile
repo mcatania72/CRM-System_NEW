@@ -25,8 +25,6 @@ pipeline {
                     steps {
                         script {
                             echo '2a. Esecuzione NPM Audit...'
-                            // Usiamo un'immagine Docker con Node per eseguire l'audit
-                            // in un ambiente pulito, senza installare nulla sull'agente Jenkins.
                             sh 'docker run --rm -v $(pwd)/backend:/app -w /app node:18-alpine npm audit --audit-level=high'
                             sh 'docker run --rm -v $(pwd)/frontend:/app -w /app node:18-alpine npm audit --audit-level=high'
                         }
@@ -34,14 +32,19 @@ pipeline {
                 }
                 stage('SAST with SonarQube') {
                     steps {
-                        // Assumiamo che SonarQube sia configurato in Jenkins -> Manage Jenkins -> Configure System
                         withSonarQubeEnv('SonarQube') {
                             script {
                                 echo '2b. Esecuzione analisi SAST con SonarQube...'
-                                // Usiamo lo scanner di SonarQube che Jenkins conosce.
-                                // Assicurati che sia installato tramite Manage Jenkins -> Global Tool Configuration
                                 def scannerHome = tool 'SonarScanner'
-                                sh "${scannerHome}/bin/sonar-scanner -Dproject.settings=devops-pipeline-fase-4/security/sonarqube-config.properties"
+                                sh """
+                                ${scannerHome}/bin/sonar-scanner \
+                                -Dproject.settings=devops-pipeline-fase-4/security/sonarqube-config.properties \
+                                -Dsonar.typescript.tsconfigPath=backend/tsconfig.json \
+                                -Dsonar.sources=backend/src,frontend/src \
+                                -Dsonar.tests=backend/src/__tests__,frontend/src/__tests__ \
+                                -Dsonar.test.inclusions=**/*.test.ts,**/*.test.tsx \
+                                -Dsonar.typescript.lcov.reportPaths=frontend/coverage/lcov.info,backend/coverage/lcov.info
+                                """
                             }
                         }
                     }
