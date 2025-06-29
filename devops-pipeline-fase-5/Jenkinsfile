@@ -1,4 +1,4 @@
-// Jenkinsfile per la FASE 5: Testing Avanzato (Parte B: E2E) - CORRETTO
+// Jenkinsfile per la FASE 5: Testing Avanzato (Parte B: E2E) - CORRETTO v2
 
 pipeline {
     agent any
@@ -68,13 +68,13 @@ pipeline {
                     sh './devops-pipeline-fase-2/test-containers.sh'
 
                     echo 'Esecuzione dei test End-to-End con Playwright...'
-                    // COMANDO CORRETTO E ROBUSTO
+                    // NUOVO APPROCCIO: Usa un'immagine Node pulita per evitare conflitti
                     sh '''
                     docker run --rm \
                         -v $(pwd)/frontend:/app \
                         -w /app \
                         --network=devops-pipeline-fase-2_default \
-                        mcr.microsoft.com/playwright:v1.40.0 /bin/bash -c "npm ci && npx playwright test"
+                        node:18-alpine /bin/sh -c "apk add --no-cache udev ttf-freefont chromium && npm ci && npx playwright test"
                     '''
                 }
             }
