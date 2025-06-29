@@ -1,0 +1,87 @@
+// Jenkinsfile per la FASE 5: Testing Avanzato (Parte A: Coverage)
+
+pipeline {
+    agent any
+
+    environment {
+        COMPOSE_FILE = 'devops-pipeline-fase-2/docker-compose.yml'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                cleanWs()
+                git url: 'https://github.com/mcatania72/CRM-System_NEW.git', branch: 'main'
+            }
+        }
+
+        // --- NUOVO STAGE PER TEST UNITARI E COVERAGE ---
+        stage('Unit Tests & Coverage') {
+            steps {
+                script {
+                    echo 'Esecuzione test unitari e generazione report di coverage...'
+                    // Usiamo un container per mantenere l'agente pulito
+                    sh 'docker run --rm -v $(pwd)/backend:/app -w /app node:18-alpine npm install'
+                    sh 'docker run --rm -v $(pwd)/backend:/app -w /app node:18-alpine npm test'
+                    
+                    sh 'docker run --rm -v $(pwd)/frontend:/app -w /app node:18-alpine npm install'
+                    sh 'docker run --rm -v $(pwd)/frontend:/app -w /app node:18-alpine npm test'
+                }
+            }
+        }
+
+        stage('Security Analysis') {
+            parallel {
+                stage('Dependency Check') {
+                    steps {
+                        sh 'docker run --rm -v $(pwd)/backend:/app -w /app node:18-alpine npm audit --audit-level=high'
+                        sh 'docker run --rm -v $(pwd)/frontend:/app -w /app node:18-alpine npm audit --audit-level=high'
+                    }
+                }
+                stage('SAST with SonarQube') {
+                    steps {
+                        withSonarQubeEnv('SonarQube') {
+                            script {
+                                def scannerHome = tool 'SonarScanner'
+                                // AGGIUNTO: Passiamo i percorsi dei report LCOV a SonarQube
+                                sh """
+                                ${scannerHome}/bin/sonar-scanner \
+                                -Dproject.settings=devops-pipeline-fase-4/security/sonarqube-config.properties \
+                                -Dsonar.sources=backend/src,frontend/src \
+                                -Dsonar.typescript.lcov.reportPaths=backend/coverage/lcov.info,frontend/coverage/lcov.info
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Build and E2E Test') { // Rinominato per chiarezza
+            steps {
+                script {
+                    echo 'Avvio ambiente completo per test...'
+                    sh "docker-compose -f ${env.COMPOSE_FILE} up --build -d"
+                    
+                    echo 'Attendo 45 secondi per la stabilizzazione...'
+                    sleep 45
+
+                    echo 'Esecuzione dei test di validazione...'
+                    sh 'chmod +x devops-pipeline-fase-2/test-containers.sh'
+                    sh './devops-pipeline-fase-2/test-containers.sh'
+                    
+                    // Qui, nella Parte B, aggiungeremo l'esecuzione dei test E2E
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                archiveArtifacts artifacts: 'backend/coverage/lcov.info, frontend/coverage/lcov.info', allowEmptyArchive: true
+                sh "docker-compose -f ${env.COMPOSE_FILE} down --volumes"
+            }
+        }
+    }
+}

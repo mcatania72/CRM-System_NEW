@@ -37,7 +37,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "start": "vite preview --port 3000 --host",
-    "test": "vitest",
+    "test": "vitest run --coverage",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
     "test:security": "npm audit && echo 'Frontend security tests passed'",

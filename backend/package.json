@@ -7,7 +7,7 @@
     "start": "node dist/app.js",
     "dev": "ts-node src/app.ts",
     "build": "tsc",
-    "test": "jest",
+    "test": "jest --coverage",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:security": "npm audit && echo 'Backend security tests passed'",
@@ -52,6 +52,7 @@
       "**/__tests__/**/*.test.ts"
     ],
     "coverageDirectory": "coverage",
+    "coverageReporters": ["json", "lcov", "text", "clover"],
     "collectCoverageFrom": [
       "src/**/*.ts",
       "!src/**/*.d.ts",
