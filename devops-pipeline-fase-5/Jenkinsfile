@@ -41,7 +41,6 @@ pipeline {
                         withSonarQubeEnv('SonarQube') {
                             script {
                                 def scannerHome = tool 'SonarScanner'
-                                // COMANDO SONARQUBE CORRETTO E ROBUSTO
                                 sh """
                                 ${scannerHome}/bin/sonar-scanner \
                                 -Dproject.settings=devops-pipeline-fase-4/security/sonarqube-config.properties \
