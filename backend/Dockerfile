@@ -1,6 +1,9 @@
 # Dockerfile per il Backend
 FROM node:18-alpine
 
+# Installa wget per l'healthcheck
+RUN apk add --no-cache wget
+
 # Imposta la directory di lavoro
 WORKDIR /app
 
