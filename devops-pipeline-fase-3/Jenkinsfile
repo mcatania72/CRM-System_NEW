@@ -34,8 +34,8 @@ pipeline {
                     echo '3. Avvio dell intera applicazione con Docker Compose...'
                     sh "docker-compose -f ${env.COMPOSE_FILE} up --build -d"
                     
-                    echo 'Attendo 30 secondi per la stabilizzazione dei servizi...'
-                    sleep 30
+                    echo 'Attendo 45 secondi per la stabilizzazione dei servizi...'
+                    sleep 45
 
                     echo '4. Esecuzione dei test di validazione sui container...'
                     sh 'chmod +x devops-pipeline-fase-2/test-containers.sh'

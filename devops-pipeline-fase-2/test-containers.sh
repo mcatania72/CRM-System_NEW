@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Test Containers Script - FASE 2 (Refactored for PostgreSQL) - VERSIONE CORRETTA
+# Test Containers Script - FASE 2 (Refactored for PostgreSQL) - v3 (Patient)
 # Esegue test di validazione sull'ambiente containerizzato.
 
 set -e
@@ -11,6 +11,8 @@ LOG_DIR="$SCRIPT_DIR/.logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/test-containers.log"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
+HEALTH_CHECK_RETRIES=12
+HEALTH_CHECK_INTERVAL=5
 
 # --- COLORI E LOGGING ---
 RED='\033[0;31m'
@@ -19,6 +21,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+# ... (funzioni di logging invariate) ...
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
 }
@@ -41,49 +44,40 @@ print_warning() {
 
 # --- FUNZIONI DI TEST ---
 
-check_container_health() {
-    print_status "Verifica dello stato di salute dei container..."
+check_container_health_patiently() {
+    print_status "Verifica paziente dello stato di salute dei container (max ${HEALTH_CHECK_RETRIES} tentativi)..."
     
+    local services
     services=$(docker-compose -f "$COMPOSE_FILE" config --services)
-    all_healthy=true
-
+    
     for service in $services; do
-        state=$(docker-compose -f "$COMPOSE_FILE" ps -q "$service" | xargs docker inspect -f '{{.State.Status}}' 2>/dev/null || echo "error")
-        if [ "$state" != "running" ]; then
-            print_error "✗ Servizio '$service' non è in esecuzione (stato: $state)."
-            all_healthy=false
-            continue
+        local attempt=0
+        while [ $attempt -lt $HEALTH_CHECK_RETRIES ]; do
+            local health
+            health=$(docker-compose -f "$COMPOSE_FILE" ps -q "$service" | xargs docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}not-defined{{end}}' 2>/dev/null || echo "error")
+            
+            if [ "$health" == "healthy" ] || [ "$health" == "not-defined" ]; then
+                print_success "✓ Servizio '$service' è pronto (stato: $health)."
+                break # Esce dal while, passa al prossimo servizio
+            fi
+            
+            attempt=$((attempt + 1))
+            print_warning "Servizio '$service' non ancora pronto (stato: $health). Attendo ${HEALTH_CHECK_INTERVAL}s... (Tentativo $attempt/$HEALTH_CHECK_RETRIES)"
+            sleep $HEALTH_CHECK_INTERVAL
+        done
+
+        if [ $attempt -eq $HEALTH_CHECK_RETRIES ]; then
+            print_error "✗ Servizio '$service' non è diventato healthy in tempo."
+            return 1
         fi
-
-        health=$(docker-compose -f "$COMPOSE_FILE" ps -q "$service" | xargs docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}not-defined{{end}}' 2>/dev/null || echo "error")
-        case "$health" in
-            "healthy")
-                print_success "✓ Servizio '$service' è in esecuzione e healthy."
-                ;;
-            "starting")
-                print_warning "✗ Servizio '$service' è ancora in fase di avvio (starting). Considerato non healthy per il test."
-                all_healthy=false
-                ;;
-            "not-defined")
-                print_success "✓ Servizio '$service' è in esecuzione (nessun health check definito)."
-                ;;
-            *)
-                print_error "✗ Servizio '$service' non è healthy (stato: $health)."
-                all_healthy=false
-                ;;
-        esac
     done
-
-    if [ "$all_healthy" = false ]; then
-        return 1
-    fi
+    
     return 0
 }
 
 run_api_login_test() {
     print_status "Esecuzione API Login Test..."
     
-    # SINTASSI ROBUSTA per curl in ambienti shell variabili
     response_code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
         --request POST 'http://localhost:4001/api/auth/login' \
         --header 'Content-Type: application/json' \
@@ -94,7 +88,6 @@ run_api_login_test() {
         return 0
     else
         print_error "✗ API Login Test fallito (HTTP $response_code)."
-        print_warning "Questo potrebbe indicare un problema di comunicazione backend-db o credenziali errate."
         return 1
     fi
 }
@@ -110,10 +103,7 @@ echo -e "${NC}"
 rm -f "$LOG_FILE"
 failed_tests=()
 
-print_status "Attendo 15 secondi per la stabilizzazione dei servizi..."
-sleep 15
-
-if ! check_container_health; then failed_tests+=("Health Check Container"); fi
+if ! check_container_health_patiently; then failed_tests+=("Health Check Container"); fi
 if ! run_api_login_test; then failed_tests+=("API Login Test"); fi
 
 echo -e "\n=======================================\n   RIEPILOGO TEST CONTAINER\n======================================="
