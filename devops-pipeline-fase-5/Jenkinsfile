@@ -1,4 +1,4 @@
-// Jenkinsfile per la FASE 5: Testing Avanzato (Parte A: Coverage)
+// Jenkinsfile per la FASE 5: Testing Avanzato (Parte A: Coverage) - CORRETTO
 
 pipeline {
     agent any
@@ -15,12 +15,10 @@ pipeline {
             }
         }
 
-        // --- NUOVO STAGE PER TEST UNITARI E COVERAGE ---
         stage('Unit Tests & Coverage') {
             steps {
                 script {
                     echo 'Esecuzione test unitari e generazione report di coverage...'
-                    // Usiamo un container per mantenere l'agente pulito
                     sh 'docker run --rm -v $(pwd)/backend:/app -w /app node:18-alpine npm install'
                     sh 'docker run --rm -v $(pwd)/backend:/app -w /app node:18-alpine npm test'
                     
@@ -43,7 +41,7 @@ pipeline {
                         withSonarQubeEnv('SonarQube') {
                             script {
                                 def scannerHome = tool 'SonarScanner'
-                                // AGGIUNTO: Passiamo i percorsi dei report LCOV a SonarQube
+                                // COMANDO SONARQUBE CORRETTO E ROBUSTO
                                 sh """
                                 ${scannerHome}/bin/sonar-scanner \
                                 -Dproject.settings=devops-pipeline-fase-4/security/sonarqube-config.properties \
@@ -57,7 +55,7 @@ pipeline {
             }
         }
 
-        stage('Build and E2E Test') { // Rinominato per chiarezza
+        stage('Build and E2E Test') {
             steps {
                 script {
                     echo 'Avvio ambiente completo per test...'
@@ -69,8 +67,6 @@ pipeline {
                     echo 'Esecuzione dei test di validazione...'
                     sh 'chmod +x devops-pipeline-fase-2/test-containers.sh'
                     sh './devops-pipeline-fase-2/test-containers.sh'
-                    
-                    // Qui, nella Parte B, aggiungeremo l'esecuzione dei test E2E
                 }
             }
         }
