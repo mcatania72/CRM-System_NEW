@@ -39,11 +39,7 @@ pipeline {
                                 sh """
                                 ${scannerHome}/bin/sonar-scanner \
                                 -Dproject.settings=devops-pipeline-fase-4/security/sonarqube-config.properties \
-                                -Dsonar.typescript.tsconfigPath=backend/tsconfig.json \
-                                -Dsonar.sources=backend/src,frontend/src \
-                                -Dsonar.tests=backend/src/__tests__,frontend/src/__tests__ \
-                                -Dsonar.test.inclusions=**/*.test.ts,**/*.test.tsx \
-                                -Dsonar.typescript.lcov.reportPaths=frontend/coverage/lcov.info,backend/coverage/lcov.info
+                                -Dsonar.sources=backend/src,frontend/src
                                 """
                             }
                         }
