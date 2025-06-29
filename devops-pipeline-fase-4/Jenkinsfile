@@ -1,364 +1,76 @@
+// Jenkinsfile per la FASE 4: Integrazione Sicurezza di Base (Versione Pulita)
+
 pipeline {
     agent any
-    
+
     environment {
-        NODEJS_HOME = tool 'NodeJS-18'
-        PATH = "${NODEJS_HOME}/bin:${PATH}"
-        REGISTRY = 'localhost:5000'
-        BACKEND_IMAGE = 'crm-system-backend'
-        FRONTEND_IMAGE = 'crm-system-frontend'
-        DOCKER_BUILDKIT = '1'
-        // Security environment
-        SONAR_SCANNER_HOME = tool 'SonarScanner'
-        TRIVY_VERSION = 'latest'
+        COMPOSE_FILE = 'devops-pipeline-fase-2/docker-compose.yml'
     }
-    
+
     stages {
-        stage('Checkout & Security Fix') {
+        stage('Checkout') {
             steps {
-                echo '=== CHECKOUT & AUTO-SECURITY FIX ==='
-                checkout scm
-                
                 script {
-                    // Auto-fix delle vulnerabilità critiche note
-                    sh '''
-                        # Fix automatico cross-spawn vulnerability se presente
-                        if [ -f "backend/package.json" ]; then
-                            cd backend
-                            if npm list cross-spawn 2>/dev/null | grep -q "cross-spawn@"; then
-                                echo "📦 Aggiornamento cross-spawn per security fix..."
-                                npm install cross-spawn@^7.0.6 --save-dev
-                                echo "✅ Cross-spawn security fix applicato"
-                            fi
-                        fi
-                    '''
+                    echo '1. Clonazione del repository...'
+                    cleanWs()
+                    git url: 'https://github.com/mcatania72/CRM-System_NEW.git', branch: 'main'
                 }
             }
         }
-        
-        stage('Build Backend') {
-            steps {
-                echo '=== BUILD: Backend TypeScript ==='
-                dir('backend') {
-                    sh '''
-                        echo "📦 Installing backend dependencies..."
-                        npm ci --include=dev
-                        
-                        echo "🔧 Building TypeScript..."
-                        npm run build
-                        
-                        echo "✅ Backend build completed"
-                        ls -la dist/
-                    '''
-                }
-            }
-        }
-        
-        stage('Build Frontend') {
-            steps {
-                echo '=== BUILD: Frontend React ==='
-                dir('frontend') {
-                    sh '''
-                        echo "📦 Installing frontend dependencies..."
-                        npm ci --include=dev
-                        
-                        echo "🔧 Building React app..."
-                        npm run build
-                        
-                        echo "✅ Frontend build completed"
-                        ls -la dist/
-                    '''
-                }
-            }
-        }
-        
-        stage('SAST - Code Analysis') {
+
+        // --- STAGE DI SICUREZZA ---
+        stage('Security Analysis') {
             parallel {
-                stage('SonarQube Analysis') {
+                stage('Dependency Check') {
                     steps {
-                        echo '=== SECURITY: Static Application Security Testing ==='
                         script {
-                            try {
-                                withSonarQubeEnv('SonarQube') {
-                                    sh '''
-                                        echo "🔍 Running SonarQube analysis..."
-                                        ${SONAR_SCANNER_HOME}/bin/sonar-scanner \
-                                            -Dsonar.projectKey=crm-system \
-                                            -Dsonar.sources=. \
-                                            -Dsonar.host.url=http://localhost:9000 \
-                                            -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/build/**"
-                                        echo "✅ SonarQube analysis completed"
-                                    '''
-                                }
-                            } catch (Exception e) {
-                                echo "⚠️ SonarQube not available, skipping SAST analysis"
-                            }
+                            echo '2a. Esecuzione NPM Audit...'
+                            // Usiamo un'immagine Docker con Node per eseguire l'audit
+                            // in un ambiente pulito, senza installare nulla sull'agente Jenkins.
+                            sh 'docker run --rm -v $(pwd)/backend:/app -w /app node:18-alpine npm audit --audit-level=high'
+                            sh 'docker run --rm -v $(pwd)/frontend:/app -w /app node:18-alpine npm audit --audit-level=high'
                         }
                     }
                 }
-                
-                stage('Dependency Audit') {
+                stage('SAST with SonarQube') {
                     steps {
-                        echo '=== SECURITY: NPM Audit ==='
-                        script {
-                            dir('backend') {
-                                sh '''
-                                    echo "🔍 Backend npm audit..."
-                                    npm audit --audit-level=moderate || echo "⚠️ Vulnerabilities found but continuing"
-                                    npm audit --json > ../security-reports/backend-audit.json || true
-                                '''
-                            }
-                            dir('frontend') {
-                                sh '''
-                                    echo "🔍 Frontend npm audit..."
-                                    npm audit --audit-level=moderate || echo "⚠️ Vulnerabilities found but continuing"
-                                    npm audit --json > ../security-reports/frontend-audit.json || true
-                                '''
+                        // Assumiamo che SonarQube sia configurato in Jenkins -> Manage Jenkins -> Configure System
+                        withSonarQubeEnv('SonarQube') {
+                            script {
+                                echo '2b. Esecuzione analisi SAST con SonarQube...'
+                                // Usiamo lo scanner di SonarQube che Jenkins conosce.
+                                // Assicurati che sia installato tramite Manage Jenkins -> Global Tool Configuration
+                                def scannerHome = tool 'SonarScanner'
+                                sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectBaseDir=."
                             }
                         }
                     }
                 }
             }
         }
-        
-        stage('Container Build & Security') {
-            parallel {
-                stage('Build Containers') {
-                    steps {
-                        echo '=== CONTAINER: Building Images ==='
-                        script {
-                            sh '''
-                                echo "🐳 Building backend container..."
-                                cd backend
-                                docker build -t ${BACKEND_IMAGE}:latest .
-                                
-                                echo "🐳 Building frontend container..."
-                                cd ../frontend
-                                docker build -t ${FRONTEND_IMAGE}:latest .
-                                
-                                echo "✅ Container builds completed"
-                                docker images | grep crm-system
-                            '''
-                        }
-                    }
-                }
-                
-                stage('Container Security Scan') {
-                    steps {
-                        echo '=== SECURITY: Container Vulnerability Scan ==='
-                        script {
-                            sh '''
-                                mkdir -p security-reports
-                                
-                                echo "🔍 Scanning backend container..."
-                                docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-                                    -v $(pwd)/security-reports:/reports \
-                                    aquasec/trivy:${TRIVY_VERSION} image \
-                                    --format json --output /reports/backend-trivy.json \
-                                    ${BACKEND_IMAGE}:latest || echo "Backend scan completed"
-                                
-                                echo "🔍 Scanning frontend container..."
-                                docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-                                    -v $(pwd)/security-reports:/reports \
-                                    aquasec/trivy:${TRIVY_VERSION} image \
-                                    --format json --output /reports/frontend-trivy.json \
-                                    ${FRONTEND_IMAGE}:latest || echo "Frontend scan completed"
-                                
-                                echo "✅ Container security scans completed"
-                            '''
-                        }
-                    }
-                }
-            }
-        }
-        
-        stage('Deploy Application') {
-            steps {
-                echo '=== DEPLOY: Container Deployment ==='
-                script {
-                    sh '''
-                        echo "🚀 Stopping existing containers..."
-                        docker stop crm-backend crm-frontend 2>/dev/null || true
-                        docker rm crm-backend crm-frontend 2>/dev/null || true
-                        
-                        echo "🚀 Starting backend container..."
-                        docker run -d \
-                            --name crm-backend \
-                            -p 3001:3001 \
-                            -e NODE_ENV=production \
-                            --restart unless-stopped \
-                            ${BACKEND_IMAGE}:latest
-                        
-                        echo "🚀 Starting frontend container..."
-                        docker run -d \
-                            --name crm-frontend \
-                            -p 3000:80 \
-                            --restart unless-stopped \
-                            ${FRONTEND_IMAGE}:latest
-                        
-                        echo "⏳ Waiting for containers to start..."
-                        sleep 20
-                        
-                        echo "✅ Deployment completed"
-                        docker ps --filter name=crm- --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-                    '''
-                }
-            }
-        }
-        
-        stage('DAST - Security Testing') {
-            steps {
-                echo '=== SECURITY: Dynamic Application Security Testing ==='
-                script {
-                    sh '''
-                        mkdir -p security-reports
-                        
-                        # Get host IP for network connectivity
-                        HOST_IP=$(hostname -I | awk '{print $1}')
-                        echo "Using host IP: $HOST_IP"
-                        
-                        # Test connectivity first
-                        echo "Testing app connectivity..."
-                        curl -s http://localhost:3000 > /dev/null && echo "✅ App reachable on localhost" || echo "❌ App not reachable on localhost"
-                        curl -s http://$HOST_IP:3000 > /dev/null && echo "✅ App reachable on $HOST_IP" || echo "❌ App not reachable on $HOST_IP"
-                        
-                        echo "Running ZAP scan against localhost..."
-                        docker run --rm \
-                            --network host \
-                            -v $(pwd)/security-reports:/zap/wrk:rw \
-                            -t zaproxy/zap-stable:latest zap-baseline.py \
-                            -t http://localhost:3000 \
-                            -J zap-baseline-report.json \
-                            -r zap-baseline-report.html || echo "ZAP scan completed"
-                        
-                        echo "ZAP scan results:"
-                        ls -la security-reports/zap-* 2>/dev/null || echo "No ZAP reports generated"
-                        
-                        echo "✅ DAST scan completed"
-                    '''
-                }
-            }
-        }
-        
-        stage('Smoke Tests') {
-            steps {
-                echo '=== TESTING: Application Health Checks ==='
-                script {
-                    sh '''
-                        echo "🧪 Running smoke tests..."
-                        
-                        # Backend health check
-                        echo "Testing backend API..."
-                        for i in {1..5}; do
-                            if curl -f http://localhost:3001/api/health; then
-                                echo "✅ Backend health check: PASSED"
-                                break
-                            else
-                                echo "⏳ Backend health check attempt $i/5..."
-                                sleep 5
-                            fi
-                        done
-                        
-                        # Frontend accessibility check
-                        echo "Testing frontend accessibility..."
-                        for i in {1..3}; do
-                            if curl -f http://localhost:3000; then
-                                echo "✅ Frontend accessibility: PASSED"
-                                break
-                            else
-                                echo "⏳ Frontend accessibility attempt $i/3..."
-                                sleep 5
-                            fi
-                        done
-                        
-                        echo "✅ Smoke tests completed"
-                    '''
-                }
-            }
-        }
-        
-        stage('Security Reporting') {
-            steps {
-                echo '=== SECURITY: Consolidate Reports ==='
-                script {
-                    sh '''
-                        echo "📊 Generating security summary..."
-                        cd security-reports
-                        
-                        # Generate security summary
-                        cat > security-summary.txt << EOF
-Security Analysis Summary - $(date)
-=====================================
 
-NPM Audit Results:
-$([ -f backend-audit.json ] && echo "Backend audit: $(cat backend-audit.json | jq -r '.metadata.totalDependencies // "N/A"') dependencies checked" || echo "Backend audit: Not available")
-$([ -f frontend-audit.json ] && echo "Frontend audit: $(cat frontend-audit.json | jq -r '.metadata.totalDependencies // "N/A"') dependencies checked" || echo "Frontend audit: Not available")
+        stage('Build and Test') {
+            steps {
+                script {
+                    echo '3. Avvio ambiente completo per test...'
+                    sh "docker-compose -f ${env.COMPOSE_FILE} up --build -d"
+                    
+                    echo 'Attendo 45 secondi per la stabilizzazione...'
+                    sleep 45
 
-Container Security Results:
-$([ -f backend-trivy.json ] && echo "Backend container: Scanned" || echo "Backend container: Not scanned")
-$([ -f frontend-trivy.json ] && echo "Frontend container: Scanned" || echo "Frontend container: Not scanned")
-
-DAST Scan Results:
-$(ls -1 zap-*.* 2>/dev/null | wc -l) reports generated
-$([ -f zap-baseline-report.json ] && echo "ZAP JSON report: Available" || echo "ZAP JSON report: Not available")
-$([ -f zap-baseline-report.html ] && echo "ZAP HTML report: Available" || echo "ZAP HTML report: Not available")
-
-Application Status:
-$(curl -s http://localhost:3001/api/health > /dev/null && echo "Backend: Healthy" || echo "Backend: Unhealthy")
-$(curl -s http://localhost:3000 > /dev/null && echo "Frontend: Accessible" || echo "Frontend: Inaccessible")
-EOF
-                        
-                        echo "📋 Security Summary:"
-                        cat security-summary.txt
-                    '''
+                    echo '4. Esecuzione dei test di validazione...'
+                    sh 'chmod +x devops-pipeline-fase-2/test-containers.sh'
+                    sh './devops-pipeline-fase-2/test-containers.sh'
                 }
             }
         }
     }
-    
+
     post {
         always {
-            echo '=== POST: Cleanup & Archive ==='
-            
-            // Archive security reports
             script {
-                sh '''
-                    echo "📁 Archiving security reports..."
-                    ls -la security-reports/ 2>/dev/null || echo "No security reports directory"
-                '''
-            }
-            
-            // Archive artifacts if they exist
-            archiveArtifacts artifacts: 'security-reports/**/*', allowEmptyArchive: true
-            
-            // Archive build artifacts
-            archiveArtifacts artifacts: 'backend/dist/**/*', allowEmptyArchive: true
-            archiveArtifacts artifacts: 'frontend/dist/**/*', allowEmptyArchive: true
-        }
-        
-        success {
-            echo '🎉 BUILD SUCCESS! CRM System deployed with security baseline'
-            script {
-                sh '''
-                    echo "🏆 Build completed successfully!"
-                    echo "🌐 Frontend: http://$(hostname -I | awk '{print $1}'):3000"
-                    echo "🔌 Backend: http://$(hostname -I | awk '{print $1}'):3001/api/health"
-                    echo "📊 Jenkins: http://$(hostname -I | awk '{print $1}'):8080"
-                '''
-            }
-        }
-        
-        failure {
-            echo '❌ BUILD FAILED! Check logs for details'
-            script {
-                sh '''
-                    echo "🔍 Troubleshooting info:"
-                    echo "Container status:"
-                    docker ps --filter name=crm- --format "table {{.Names}}\t{{.Status}}" || true
-                    echo "Recent container logs:"
-                    docker logs crm-backend --tail 10 2>/dev/null || echo "No backend logs"
-                    docker logs crm-frontend --tail 10 2>/dev/null || echo "No frontend logs"
-                '''
+                echo '5. Pulizia dell ambiente Docker...'
+                sh "docker-compose -f ${env.COMPOSE_FILE} down --volumes"
             }
         }
     }
