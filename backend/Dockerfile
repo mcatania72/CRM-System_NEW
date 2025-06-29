@@ -19,8 +19,12 @@ RUN npm run build
 # Rimuovi le devDependencies dopo il build per ridurre la dimensione
 RUN npm prune --production
 
+# Copia e imposta i permessi per lo script di healthcheck
+COPY healthcheck.sh /
+RUN chmod +x /healthcheck.sh
+
 # Espone la porta
-EXPOSE 3001
+EXPOSE 4001
 
 # Comando di avvio
 CMD ["npm", "start"]

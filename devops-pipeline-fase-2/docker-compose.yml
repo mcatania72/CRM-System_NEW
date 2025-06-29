@@ -45,10 +45,11 @@ services:
       - "4001:4001"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4001/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD-SHELL", "/healthcheck.sh"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   # 3. Servizio Frontend
   frontend:
