@@ -1,52 +1,66 @@
-networks:
-  crm-network:
-    driver: bridge
+version: '3.8'
 
-volumes:
-  crm-data:
-    driver: local
+# docker-compose.yml per la FASE 2: Containerizzazione Completa con PostgreSQL
 
 services:
-  backend:
-    build:
-      context: ../
-      dockerfile: devops-pipeline-fase-2/containers/backend/Dockerfile
-    container_name: crm-backend
-    ports:
-      - "3001:3001"
+  # 1. Servizio Database PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    container_name: crm-postgres-fase2
     environment:
-      - NODE_ENV=production
-      - PORT=3001
-      - DATABASE_PATH=/app/data/database.sqlite
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: crm
     volumes:
-      - crm-data:/app/data
-    networks:
-      - crm-network
+      - crm-pgdata-fase2:/var/lib/postgresql/data
+    ports:
+      - "4002:5432"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      test: ["CMD-SHELL", "pg_isready -U postgres -d crm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
-  frontend:
+  # 2. Servizio Backend
+  backend:
     build:
-      context: ../
-      dockerfile: devops-pipeline-fase-2/containers/frontend/Dockerfile
-    container_name: crm-frontend
-    ports:
-      - "3000:80"
+      context: ../backend # Percorso CORRETTO
+      dockerfile: Dockerfile
+    container_name: crm-backend-fase2
+    depends_on:
+      postgres:
+        condition: service_healthy # Attende che il DB sia pronto
     environment:
       - NODE_ENV=production
-    networks:
-      - crm-network
+      - JWT_SECRET=your-super-secret-jwt-key-fase2
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=admin123
+      - DB_DATABASE=crm
+      - PORT=4001
+    ports:
+      - "4001:4001"
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      test: ["CMD", "curl", "-f", "http://localhost:4001/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # 3. Servizio Frontend
+  frontend:
+    build:
+      context: ../frontend # Percorso CORRETTO
+      dockerfile: Dockerfile
+    container_name: crm-frontend-fase2
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
+    ports:
+      - "4000:80"
     restart: unless-stopped
+
+volumes:
+  crm-pgdata-fase2:
+    driver: local

@@ -1,0 +1,80 @@
+// Jenkinsfile per la FASE 3: CI/CD Base con PostgreSQL
+
+pipeline {
+    agent any // Esegue su qualsiasi agente Jenkins disponibile
+
+    environment {
+        // Definiamo il percorso del nostro file di compose per usarlo in più punti
+        COMPOSE_FILE = 'devops-pipeline-fase-2/docker-compose.yml'
+    }
+
+    stages {
+        // --- Fase 1: Preparazione ---
+        stage('Checkout') {
+            steps {
+                script {
+                    echo '1. Clonazione del repository...'
+                    // Pulisce la workspace prima di clonare per assicurare un ambiente pulito
+                    cleanWs()
+                    git url: 'https://github.com/mcatania72/CRM-System_NEW.git', branch: 'main'
+                }
+            }
+        }
+
+        // --- Fase 2: Validazione Ambiente Jenkins ---
+        stage('Environment Validation') {
+            steps {
+                script {
+                    echo '2. Verifica dei prerequisiti sull agente Jenkins...'
+                    // Eseguiamo lo script della fase 2 per assicurarci che Docker sia pronto
+                    sh 'chmod +x devops-pipeline-fase-2/prerequisites-docker.sh'
+                    sh './devops-pipeline-fase-2/prerequisites-docker.sh'
+                }
+            }
+        }
+
+        // --- Fase 3: Build e Test ---
+        stage('Build and Test with Docker Compose') {
+            steps {
+                script {
+                    echo '3. Avvio dell intera applicazione (DB, Backend, Frontend) con Docker Compose...'
+                    // Il flag --build forza la ricostruzione delle immagini
+                    sh "docker-compose -f ${env.COMPOSE_FILE} up --build -d"
+                    
+                    echo 'Attendo 30 secondi per la stabilizzazione dei servizi...'
+                    sleep 30
+
+                    echo '4. Esecuzione dei test di validazione sui container...'
+                    // Eseguiamo lo script di test della fase 2
+                    sh 'chmod +x devops-pipeline-fase-2/test-containers.sh'
+                    sh './devops-pipeline-fase-2/test-containers.sh'
+                }
+            }
+        }
+    }
+
+    // --- Fase 4: Pulizia ---
+    // Questa sezione viene eseguita sempre alla fine della pipeline,
+    // sia in caso di successo che di fallimento.
+    post {
+        always {
+            script {
+                echo '5. Pulizia dell ambiente Docker...'
+                // Ferma e rimuove tutti i container, volumi e reti definiti nel compose file
+                sh "docker-compose -f ${env.COMPOSE_FILE} down --volumes"
+            }
+        }
+        success {
+            script {
+                echo 'Pipeline completata con successo!'
+                // In futuro, qui si potrebbero aggiungere notifiche (es. Slack, Email)
+            }
+        }
+        failure {
+            script {
+                echo 'Pipeline fallita.'
+                // Qui si potrebbero aggiungere azioni specifiche in caso di fallimento
+            }
+        }
+    }
+}
