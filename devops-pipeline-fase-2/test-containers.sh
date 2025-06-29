@@ -83,9 +83,11 @@ check_container_health() {
 run_api_login_test() {
     print_status "Esecuzione API Login Test..."
     
-    # Eseguiamo una richiesta di login direttamente al backend per bypassare il browser
-    # e verificare la comunicazione backend-db.
-    response=$(curl -s -o /dev/null -w "%{\http_code}"         -X POST http://localhost:4001/api/auth/login         -H "Content-Type: application/json"         -d '{"email":"admin@crm.local","password":"admin123"}')
+    # SINTASSI CORRETTA: %{http_code} senza backslash
+    response=$(curl -s -o /dev/null -w "%{\http_code}" \
+        -X POST http://localhost:4001/api/auth/login \
+        -H "Content-Type: application/json" \
+        -d '{"email":"admin@crm.local","password":"admin123"}')
 
     if [ "$response" -eq 200 ]; then
         print_success "✓ API Login Test superato (HTTP $response)."
@@ -108,7 +110,6 @@ echo -e "${NC}"
 rm -f "$LOG_FILE"
 failed_tests=()
 
-# Attende un po' per la stabilizzazione dei servizi prima dei test
 print_status "Attendo 15 secondi per la stabilizzazione dei servizi..."
 sleep 15
 
