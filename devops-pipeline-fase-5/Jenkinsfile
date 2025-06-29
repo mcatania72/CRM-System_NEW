@@ -1,4 +1,4 @@
-// Jenkinsfile per la FASE 5: Testing Avanzato (Parte A: Coverage) - CORRETTO
+// Jenkinsfile per la FASE 5: Testing Avanzato (Parte B: E2E)
 
 pipeline {
     agent any
@@ -63,9 +63,20 @@ pipeline {
                     echo 'Attendo 45 secondi per la stabilizzazione...'
                     sleep 45
 
-                    echo 'Esecuzione dei test di validazione...'
+                    echo 'Esecuzione dei test di validazione API...'
                     sh 'chmod +x devops-pipeline-fase-2/test-containers.sh'
                     sh './devops-pipeline-fase-2/test-containers.sh'
+
+                    echo 'Esecuzione dei test End-to-End con Playwright...'
+                    // Usiamo un container con le dipendenze di Playwright per eseguire i test
+                    // Montiamo la directory del frontend e la rete dei container
+                    sh '''
+                    docker run --rm \
+                        -v $(pwd)/frontend:/app \
+                        -w /app \
+                        --network=devops-pipeline-fase-2_default \
+                        mcr.microsoft.com/playwright:v1.40.0 /bin/bash -c "npm install && npx playwright test"
+                    '''
                 }
             }
         }
@@ -74,7 +85,7 @@ pipeline {
     post {
         always {
             script {
-                archiveArtifacts artifacts: 'backend/coverage/lcov.info, frontend/coverage/lcov.info', allowEmptyArchive: true
+                archiveArtifacts artifacts: 'backend/coverage/lcov.info, frontend/coverage/lcov.info, frontend/playwright-report/', allowEmptyArchive: true
                 sh "docker-compose -f ${env.COMPOSE_FILE} down --volumes"
             }
         }
