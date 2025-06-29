@@ -83,17 +83,17 @@ check_container_health() {
 run_api_login_test() {
     print_status "Esecuzione API Login Test..."
     
-    # SINTASSI CORRETTA: %{http_code} senza backslash
-    response=$(curl -s -o /dev/null -w "%\{http_code}" \
-        -X POST http://localhost:4001/api/auth/login \
-        -H "Content-Type: application/json" \
-        -d '{"email":"admin@crm.local","password":"admin123"}')
+    # SINTASSI ROBUSTA per curl in ambienti shell variabili
+    response_code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+        --request POST 'http://localhost:4001/api/auth/login' \
+        --header 'Content-Type: application/json' \
+        --data '{"email":"admin@crm.local","password":"admin123"}')
 
-    if [ "$response" -eq 200 ]; then
-        print_success "✓ API Login Test superato (HTTP $response)."
+    if [ "$response_code" -eq 200 ]; then
+        print_success "✓ API Login Test superato (HTTP $response_code)."
         return 0
     else
-        print_error "✗ API Login Test fallito (HTTP $response)."
+        print_error "✗ API Login Test fallito (HTTP $response_code)."
         print_warning "Questo potrebbe indicare un problema di comunicazione backend-db o credenziali errate."
         return 1
     fi
