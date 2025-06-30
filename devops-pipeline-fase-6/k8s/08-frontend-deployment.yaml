@@ -30,12 +30,11 @@ spec:
         prometheus.io/port: "80"
         prometheus.io/path: "/health"
     spec:
-      # Security context
+      # Security context - CORRETTO per nginx
       securityContext:
-        runAsUser: 101  # nginx user
-        runAsGroup: 101
-        runAsNonRoot: true
-        fsGroup: 101
+        runAsUser: 0     # ← CAMBIATO: root per nginx setup
+        runAsGroup: 0    # ← CAMBIATO: root group
+        fsGroup: 0       # ← CAMBIATO: filesystem group
       
       containers:
       - name: frontend
@@ -104,12 +103,20 @@ spec:
         - name: nginx-config
           mountPath: /etc/nginx/conf.d/default.conf
           subPath: default.conf
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
+        - name: nginx-run
+          mountPath: /var/run
       
       # Volumes
       volumes:
       - name: nginx-config
         configMap:
           name: frontend-nginx-config
+      - name: nginx-cache
+        emptyDir: {}
+      - name: nginx-run
+        emptyDir: {}
       
       # Restart policy
       restartPolicy: Always
@@ -167,7 +174,7 @@ data:
             add_header Cache-Control "public, immutable";
         }
         
-        # API proxy to backend
+        # API proxy to backend - UPDATED FOR KUBERNETES
         location /api/ {
             proxy_pass http://backend-service:4001/api/;
             proxy_set_header Host $host;
