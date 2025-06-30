@@ -20,24 +20,12 @@ spec:
   selector:
     app: postgres
     component: database
-  
   # Service discovery ottimizzata
   clusterIP: None  # Headless service per discovery diretto
   sessionAffinity: ClientIP  # Mantieni connessioni per performance
-  
   # Timeout settings
   sessionAffinityConfig:
     clientIP:
       timeoutSeconds: 10800  # 3 ore
----
-# Endpoint slice per monitoring (opzionale ma utile)
-apiVersion: v1
-kind: Endpoints
-metadata:
-  name: postgres-service
-  namespace: crm-system
-  labels:
-    app: postgres
-    component: database
-# Note: Gli endpoints vengono gestiti automaticamente dal service
-# Questo è solo per riferimento/monitoring
+# Note: Gli endpoints vengono gestiti automaticamente da Kubernetes
+# Non è necessario definirli esplicitamente nel manifest
