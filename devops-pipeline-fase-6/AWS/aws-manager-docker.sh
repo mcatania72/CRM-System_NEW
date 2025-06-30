@@ -1075,11 +1075,20 @@ main() {
             ;;
         "restart")
             # Stop e rimuovi tutto per forzare ricreazione
+            log "🔄 Restarting with updated configuration..."
             cd "$CRM_DIR" 2>/dev/null || { warn "CRM not deployed yet"; exit 1; }
             docker-compose down
             docker-compose rm -f
-            docker-compose up -d
-            log "✅ Application restarted with fresh containers"
+            
+            # Backup e ricrea completamente la directory
+            cd ..
+            rm -rf crm-docker
+            
+            # Redeploy completo con script aggiornato
+            cd "$SCRIPT_DIR"
+            ./aws-manager-docker.sh deploy
+            
+            log "✅ Application restarted with completely fresh setup"
             ;;
         "stop")
             stop_application
