@@ -117,6 +117,27 @@ build_images() {
     echo -e "${GREEN}✅ All images built successfully${NC}"
 }
 
+# Function to configure local image usage
+configure_local_images() {
+    echo -e "${BLUE}🔧 Configuring deployments to use local images...${NC}"
+    
+    # Wait a moment for deployments to be created
+    sleep 5
+    
+    # Check if deployments exist and patch them to use local images
+    if $KUBECTL_CMD get deployment backend -n $NAMESPACE &>/dev/null; then
+        echo "Configuring backend to use local images..."
+        $KUBECTL_CMD patch deployment backend -n $NAMESPACE -p '{"spec":{"template":{"spec":{"containers":[{"name":"backend","imagePullPolicy":"IfNotPresent"}]}}}}' || true
+    fi
+    
+    if $KUBECTL_CMD get deployment frontend -n $NAMESPACE &>/dev/null; then
+        echo "Configuring frontend to use local images..."
+        $KUBECTL_CMD patch deployment frontend -n $NAMESPACE -p '{"spec":{"template":{"spec":{"containers":[{"name":"frontend","imagePullPolicy":"IfNotPresent"}]}}}}' || true
+    fi
+    
+    echo -e "${GREEN}✅ Local image configuration applied${NC}"
+}
+
 # Function to apply Kubernetes manifests
 apply_manifests() {
     echo -e "${BLUE}📋 Applying Kubernetes manifests...${NC}"
@@ -157,6 +178,9 @@ apply_manifests() {
             echo -e "${YELLOW}⚠️  Manifest not found: $file${NC}"
         fi
     done
+    
+    # Configure local images after applying manifests
+    configure_local_images
 }
 
 # Function to perform health checks
