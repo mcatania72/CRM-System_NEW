@@ -40,7 +40,7 @@ spec:
       containers:
       - name: frontend
         image: crm-frontend:latest  # Image buildato dalla FASE 2
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Never  # ← FORZA USO IMMAGINE LOCALE
         
         # Resource allocation leggero per frontend statico
         resources:

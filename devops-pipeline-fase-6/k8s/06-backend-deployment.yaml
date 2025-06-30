@@ -60,7 +60,7 @@ spec:
       containers:
       - name: backend
         image: crm-backend:latest  # Image buildato dalla FASE 2
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Never  # ← FORZA USO IMMAGINE LOCALE
         
         # Resource allocation per DEV_VM
         resources:
