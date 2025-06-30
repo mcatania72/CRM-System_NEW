@@ -149,17 +149,17 @@ apply_manifests() {
         exit 1
     fi
     
-    # Apply manifests in order
+    # Apply manifests in CORRECT order (services BEFORE deployments)
     local manifests=(
         "01-namespace.yaml"
         "02-secrets.yaml"
         "03-postgres-pvc.yaml"
-        "04-postgres-deployment.yaml"
-        "05-postgres-service.yaml"
-        "06-backend-deployment.yaml"
-        "07-backend-service.yaml"
-        "08-frontend-deployment.yaml"
-        "09-frontend-service.yaml"
+        "05-postgres-service.yaml"      # ← SERVICE PRIMA DEL DEPLOYMENT!
+        "04-postgres-deployment.yaml"   # ← DEPLOYMENT DOPO IL SERVICE!
+        "07-backend-service.yaml"       # ← SERVICE PRIMA DEL DEPLOYMENT!
+        "06-backend-deployment.yaml"    # ← DEPLOYMENT DOPO IL SERVICE!
+        "09-frontend-service.yaml"      # ← SERVICE PRIMA DEL DEPLOYMENT!
+        "08-frontend-deployment.yaml"   # ← DEPLOYMENT DOPO IL SERVICE!
         "10-ingress.yaml"
         "11-autoscaling.yaml"
     )
@@ -222,20 +222,18 @@ show_access_info() {
     echo -e "${PURPLE}=== 🌐 ACCESS INFORMATION ===${NC}"
     
     # Get LoadBalancer IP
-    local lb_ip=$($KUBECTL_CMD get svc traefik -n kube-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "Not Available")
+    local lb_ip=$($KUBECTL_CMD get svc traefik -n kube-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "192.168.1.29")
     
     # Get NodePort services
-    local frontend_nodeport=$($KUBECTL_CMD get svc frontend-service -n $NAMESPACE -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "N/A")
-    local backend_nodeport=$($KUBECTL_CMD get svc backend-service -n $NAMESPACE -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "N/A")
+    local frontend_nodeport=$($KUBECTL_CMD get svc frontend-service -n $NAMESPACE -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "30002")
+    local backend_nodeport=$($KUBECTL_CMD get svc backend-service -n $NAMESPACE -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "30003")
     
     echo ""
     echo -e "${GREEN}🎨 Frontend Access:${NC}"
-    echo "   LoadBalancer: http://$lb_ip/crm"
     echo "   NodePort:     http://$lb_ip:$frontend_nodeport"
     echo "   Port Forward: kubectl port-forward -n $NAMESPACE svc/frontend-service 3000:80"
     echo ""
     echo -e "${GREEN}🔌 Backend API:${NC}"
-    echo "   LoadBalancer: http://$lb_ip/api"
     echo "   NodePort:     http://$lb_ip:$backend_nodeport"
     echo "   Port Forward: kubectl port-forward -n $NAMESPACE svc/backend-service 3001:4001"
     echo ""
