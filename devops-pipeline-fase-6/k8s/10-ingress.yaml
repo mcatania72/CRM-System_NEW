@@ -1,4 +1,4 @@
-# FASE 6: Ingress con Traefik per Load Balancing
+# FASE 6: Ingress semplificato per k3s (senza CRD avanzati)
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -8,33 +8,25 @@ metadata:
     app: crm
     component: ingress
   annotations:
-    # Traefik annotations
+    # Traefik v1 annotations (compatibili con k3s default)
     kubernetes.io/ingress.class: "traefik"
     traefik.ingress.kubernetes.io/router.entrypoints: web
     
-    # SSL/TLS future preparation
-    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Rewrite rules per path-based routing
+    traefik.ingress.kubernetes.io/rewrite-target: /
     
-    # Redirect and rewrite rules
-    traefik.ingress.kubernetes.io/redirect-entry-point: https
-    traefik.ingress.kubernetes.io/redirect-permanent: "true"
-    
-    # Middleware per CORS e security
-    traefik.ingress.kubernetes.io/router.middlewares: crm-system-cors@kubernetescrd
-    
-    # Load balancer configuration
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
-    nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    # Basic headers
+    traefik.ingress.kubernetes.io/custom-response-headers: |
+      X-Frame-Options: SAMEORIGIN
+      X-Content-Type-Options: nosniff
 spec:
   rules:
-  # Regola principale per l'IP del load balancer
-  - host: 192.168.1.29
+  # Uso di un hostname invece di IP
+  - host: crm.devvm.local
     http:
       paths:
       # Frontend principale
-      - path: /crm
+      - path: /
         pathType: Prefix
         backend:
           service:
@@ -50,18 +42,9 @@ spec:
             name: backend-service
             port:
               number: 4001
-      
-      # Root redirect al CRM (opzionale)
-      - path: /
-        pathType: Exact
-        backend:
-          service:
-            name: frontend-service
-            port:
-              number: 80
   
-  # Regola alternativa per hostname (opzionale)
-  - host: crm.devvm.local
+  # Fallback per accesso diretto via IP (usando wildcard DNS)
+  - host: "*.local"
     http:
       paths:
       - path: /
@@ -78,69 +61,3 @@ spec:
             name: backend-service
             port:
               number: 4001
-  
-  # TLS configuration (preparazione per futuro)
-  # tls:
-  # - hosts:
-  #   - crm.devvm.local
-  #   secretName: crm-tls-secret
----
-# Middleware per CORS (Traefik v2+)
-apiVersion: traefik.containo.us/v1alpha1
-kind: Middleware
-metadata:
-  name: cors
-  namespace: crm-system
-spec:
-  headers:
-    accessControlAllowMethods:
-      - GET
-      - POST
-      - PUT
-      - DELETE
-      - OPTIONS
-    accessControlAllowOriginList:
-      - "http://192.168.1.29"
-      - "http://192.168.1.29:30002"
-      - "http://crm.devvm.local"
-    accessControlAllowHeaders:
-      - "Content-Type"
-      - "Authorization"
-      - "X-Requested-With"
-    accessControlAllowCredentials: true
-    accessControlMaxAge: 3600
----
-# Middleware per security headers
-apiVersion: traefik.containo.us/v1alpha1
-kind: Middleware
-metadata:
-  name: security-headers
-  namespace: crm-system
-spec:
-  headers:
-    customRequestHeaders:
-      X-Forwarded-Proto: "https"
-    customResponseHeaders:
-      X-Frame-Options: "SAMEORIGIN"
-      X-Content-Type-Options: "nosniff"
-      X-XSS-Protection: "1; mode=block"
-      Strict-Transport-Security: "max-age=31536000; includeSubDomains"
-      Referrer-Policy: "strict-origin-when-cross-origin"
----
-# Service Monitor per Prometheus (futuro monitoring)
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: crm-ingress-monitor
-  namespace: crm-system
-  labels:
-    app: crm
-    component: ingress
-spec:
-  selector:
-    matchLabels:
-      app: traefik
-  endpoints:
-  - port: traefik
-    interval: 30s
-    path: /metrics
