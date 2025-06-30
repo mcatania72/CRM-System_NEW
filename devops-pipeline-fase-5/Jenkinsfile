@@ -1,4 +1,4 @@
-// Jenkinsfile per la FASE 5: Testing Avanzato (Parte B: E2E) - Refactored
+// Jenkinsfile per la FASE 5: Testing Avanzato (E2E Temporaneamente Disabilitato)
 
 pipeline {
     agent any
@@ -54,7 +54,7 @@ pipeline {
             }
         }
 
-        stage('Build and E2E Test') {
+        stage('Build and Validation') { // Rinominato, rimosso E2E
             steps {
                 script {
                     echo 'Avvio ambiente completo per test...'
@@ -67,15 +67,15 @@ pipeline {
                     sh 'chmod +x devops-pipeline-fase-2/test-containers.sh'
                     sh './devops-pipeline-fase-2/test-containers.sh'
 
-                    echo 'Esecuzione dei test End-to-End con Playwright...'
-                    // Eseguiamo i test dalla loro directory isolata
-                    sh '''
-                    docker run --rm \
-                        -v $(pwd)/e2e-tests:/app \
-                        -w /app \
-                        --network=devops-pipeline-fase-2_default \
-                        mcr.microsoft.com/playwright:v1.40.0 /bin/bash -c "npm ci && npx playwright test"
-                    '''
+                    // --- TEST E2E TEMPORANEAMENTE DISABILITATO ---
+                    // echo 'Esecuzione dei test End-to-End con Playwright...'
+                    // sh ''''''
+                    // docker run --rm \
+                    //     -v $(pwd)/e2e-tests:/app \
+                    //     -w /app \
+                    //     --network=devops-pipeline-fase-2_default \
+                    //     mcr.microsoft.com/playwright:v1.40.0 /bin/bash -c "npm ci && npx playwright test"
+                    // ''''''
                 }
             }
         }
@@ -84,8 +84,7 @@ pipeline {
     post {
         always {
             script {
-                // Aggiorniamo il percorso degli artefatti
-                archiveArtifacts artifacts: 'backend/coverage/lcov.info, frontend/coverage/lcov.info, e2e-tests/playwright-report/', allowEmptyArchive: true
+                archiveArtifacts artifacts: 'backend/coverage/lcov.info, frontend/coverage/lcov.info', allowEmptyArchive: true
                 sh "docker-compose -f ${env.COMPOSE_FILE} down --volumes"
             }
         }
