@@ -123,12 +123,25 @@ fix_vm_firewall() {
     sudo ufw allow ${FRONTEND_PORT}/tcp comment 'CRM Frontend K8s NodePort'
     sudo ufw allow ${BACKEND_PORT}/tcp comment 'CRM Backend K8s NodePort'
     
+    # Force explicit rules for 30002/30003 if different
+    if [ "${FRONTEND_PORT}" != "30002" ]; then
+        sudo ufw allow 30002/tcp comment 'CRM Frontend K8s NodePort 30002'
+    fi
+    if [ "${BACKEND_PORT}" != "30003" ]; then
+        sudo ufw allow 30003/tcp comment 'CRM Backend K8s NodePort 30003'
+    fi
+    
     # Check if UFW is blocking
     sudo ufw --force enable
     echo ""
     
     # Reload UFW
     sudo ufw reload
+    
+    # Verify rules were added
+    echo "Verifica regole UFW per NodePort:"
+    sudo ufw status numbered | grep -E "(30002|30003|${FRONTEND_PORT}|${BACKEND_PORT})"
+    
     echo "✅ UFW configured"
 }
 

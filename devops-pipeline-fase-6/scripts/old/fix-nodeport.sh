@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# FASE 6: Fix K3s NodePort Binding
+# FASE 6: Fix K3s NodePort Binding (VERSIONE SICURA)
 # Forza ricreazione servizi NodePort per binding corretto
 
 set -euo pipefail
 
 NAMESPACE="crm-system"
 
-echo "=== 🔧 FASE 6: Fix K3s NodePort Binding ==="
+echo "=== 🔧 FASE 6: Fix K3s NodePort Binding (SICURO) ==="
 echo "Namespace: ${NAMESPACE}"
 echo "Timestamp: $(date)"
 echo ""
@@ -125,7 +125,7 @@ verify_nodeport_binding() {
 }
 
 fix_k3s_nodeport_config() {
-    echo -e "${BLUE}🔧 Fix configurazione K3s NodePort...${NC}"
+    echo -e "${BLUE}🔧 Fix configurazione K3s NodePort (SICURO)...${NC}"
     
     # Check k3s configuration
     echo "Configurazione K3s attuale:"
@@ -138,10 +138,8 @@ fix_k3s_nodeport_config() {
         return 1
     fi
     
-    # Restart k3s con flush delle regole iptables
-    echo "Flush iptables e restart k3s..."
-    sudo iptables -F
-    sudo iptables -t nat -F
+    # SICURO: Solo restart k3s senza toccare iptables
+    echo "Restart k3s (SICURO - senza modifiche iptables)..."
     sudo systemctl restart k3s
     
     echo "Aspettando k3s restart..."
@@ -149,7 +147,7 @@ fix_k3s_nodeport_config() {
     
     # Verifica cluster
     kubectl get nodes
-    echo -e "${GREEN}✅ K3s riconfigurato${NC}"
+    echo -e "${GREEN}✅ K3s riconfigurato (modo sicuro)${NC}"
 }
 
 show_access_info() {
@@ -165,7 +163,7 @@ show_access_info() {
 }
 
 # Main execution
-case "${1:-full}" in
+case "${1:-services}" in
     "services")
         backup_and_recreate_services
         verify_nodeport_binding
@@ -176,7 +174,7 @@ case "${1:-full}" in
     "verify")
         verify_nodeport_binding
         ;;
-    "full")
+    "safe")
         backup_and_recreate_services
         verify_nodeport_binding
         echo ""
@@ -186,14 +184,14 @@ case "${1:-full}" in
         show_access_info
         ;;
     *)
-        echo "Usage: $0 [services|config|verify|full]"
+        echo "Usage: $0 [services|config|verify|safe]"
         echo ""
         echo "  services - Ricrea solo i servizi NodePort"
-        echo "  config   - Fix configurazione k3s"
+        echo "  config   - Restart k3s (SICURO)"
         echo "  verify   - Verifica binding e connettività"
-        echo "  full     - Esegue tutto (default)"
+        echo "  safe     - Esegue tutto in modo SICURO (default)"
         ;;
 esac
 
 echo ""
-echo "=== Fix NodePort completato ==="
+echo "=== Fix NodePort completato (versione sicura) ==="
