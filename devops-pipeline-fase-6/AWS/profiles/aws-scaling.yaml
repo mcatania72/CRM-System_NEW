@@ -1,0 +1,130 @@
+# AWS Scaling Profile - CRM System
+# Profilo per istanze più grandi post-free tier
+
+# =================================
+# INSTANCE CONFIGURATION
+# =================================
+instance:
+  type: "t3.small"  # 2 vCPU, 2GB RAM
+  vcpu: 2
+  memory_gb: 2
+  storage_gb: 50
+  network: "up_to_5_gigabit"
+
+# =================================
+# RESOURCE ALLOCATION STRATEGY
+# =================================
+# Total 2GB RAM allocation strategy:
+# - System + k3s overhead: ~600MB (30%)
+# - PostgreSQL: ~512MB (25%)
+# - Backend: ~512MB (25%)
+# - Frontend: ~256MB (13%)
+# - Buffer/Available: ~144MB (7%)
+
+resource_allocation:
+  postgresql:
+    replicas: 1
+    requests:
+      memory: "256Mi"  # 12.5% of total RAM
+      cpu: "100m"      # 5% of total CPU
+    limits:
+      memory: "512Mi"  # 25% of total RAM
+      cpu: "500m"      # 25% of total CPU
+    storage: "20Gi"    # More generous storage
+    
+  backend:
+    replicas: 2        # Can afford 2 replicas
+    requests:
+      memory: "128Mi"  # 6% of total RAM per replica
+      cpu: "50m"       # 2.5% of total CPU per replica
+    limits:
+      memory: "256Mi"  # 12.5% of total RAM per replica
+      cpu: "200m"      # 10% of total CPU per replica
+    
+  frontend:
+    replicas: 2        # Can afford 2 replicas
+    requests:
+      memory: "64Mi"   # 3% of total RAM per replica
+      cpu: "25m"       # 1.25% of total CPU per replica
+    limits:
+      memory: "128Mi"  # 6% of total RAM per replica
+      cpu: "100m"      # 5% of total CPU per replica
+
+# =================================
+# POSTGRESQL TUNING
+# =================================
+postgresql_config:
+  shared_buffers: "128MB"
+  max_connections: "100"
+  work_mem: "4MB"
+  maintenance_work_mem: "64MB"
+  effective_cache_size: "512MB"
+  random_page_cost: "1.1"
+  effective_io_concurrency: "200"
+  
+# =================================
+# AUTOSCALING CONFIGURATION
+# =================================
+autoscaling:
+  enabled: true
+  backend:
+    min_replicas: 2
+    max_replicas: 4
+    cpu_threshold: 70
+    memory_threshold: 75
+  frontend:
+    min_replicas: 2
+    max_replicas: 3
+    cpu_threshold: 60
+    memory_threshold: 70
+
+# =================================
+# MONITORING THRESHOLDS
+# =================================
+monitoring:
+  memory_threshold: 80    # % usage before alert
+  cpu_threshold: 75       # % usage before alert
+  disk_threshold: 80      # % usage before alert
+  
+  alerts:
+    enabled: true
+    interval: "2m"         # Check every 2 minutes
+    
+# =================================
+# COST OPTIMIZATION
+# =================================
+cost_optimization:
+  spot_instances: true     # Use spot instances for cost savings
+  reserved_instances: false
+  auto_shutdown:
+    enabled: true
+    schedule: "0 22 * * *"  # Shutdown at 10 PM
+    startup: "0 8 * * *"    # Startup at 8 AM
+  
+  storage:
+    type: "gp3"            # Latest generation SSD
+    size: "50GB"
+    delete_on_termination: false  # Preserve data
+
+# =================================
+# BACKUP CONFIGURATION
+# =================================
+backup:
+  database:
+    enabled: true
+    schedule: "0 1 * * *"   # Daily at 1 AM
+    retention_days: 30
+    compression: true
+    s3_upload: true
+    
+# =================================
+# SCALING LIMITS
+# =================================
+scaling_limits:
+  max_pods_per_node: 30
+  max_services: 20
+  max_pvcs: 10
+  
+  # Resource limits
+  total_cpu_limit: "1800m"   # Leave 200m for system
+  total_memory_limit: "1800Mi" # Leave 200Mi for system

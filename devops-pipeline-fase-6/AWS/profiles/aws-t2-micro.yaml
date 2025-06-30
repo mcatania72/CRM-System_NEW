@@ -1,0 +1,203 @@
+# AWS t2.micro Profile - CRM System
+# Profilo ottimizzato per EC2 Free Tier
+
+# =================================
+# INSTANCE CONFIGURATION
+# =================================
+instance:
+  type: "t2.micro"
+  vcpu: 1
+  memory_gb: 1
+  storage_gb: 30
+  network: "moderate"
+
+# =================================
+# RESOURCE ALLOCATION STRATEGY
+# =================================
+# Total 1GB RAM allocation strategy:
+# - System + k3s overhead: ~400MB (40%)
+# - PostgreSQL: ~256MB (25%)
+# - Backend: ~128MB (13%)
+# - Frontend: ~64MB (6%)
+# - Buffer/Available: ~152MB (16%)
+
+resource_allocation:
+  postgresql:
+    replicas: 1
+    requests:
+      memory: "128Mi"  # 12.5% of total RAM
+      cpu: "50m"       # 5% of total CPU
+    limits:
+      memory: "256Mi"  # 25% of total RAM
+      cpu: "200m"      # 20% of total CPU
+    storage: "5Gi"     # Conservative storage
+    
+  backend:
+    replicas: 1        # Single replica only
+    requests:
+      memory: "64Mi"   # 6% of total RAM
+      cpu: "25m"       # 2.5% of total CPU
+    limits:
+      memory: "128Mi"  # 12.5% of total RAM
+      cpu: "100m"      # 10% of total CPU
+    
+  frontend:
+    replicas: 1        # Single replica only
+    requests:
+      memory: "32Mi"   # 3% of total RAM
+      cpu: "10m"       # 1% of total CPU
+    limits:
+      memory: "64Mi"   # 6% of total RAM
+      cpu: "50m"       # 5% of total CPU
+
+# =================================
+# POSTGRESQL TUNING
+# =================================
+postgresql_config:
+  shared_buffers: "32MB"
+  max_connections: "20"
+  work_mem: "1MB"
+  maintenance_work_mem: "16MB"
+  effective_cache_size: "128MB"
+  random_page_cost: "1.1"
+  effective_io_concurrency: "200"
+  
+# =================================
+# KUBERNETES CONFIGURATION
+# =================================
+kubernetes:
+  cluster_type: "k3s"
+  version: "latest"
+  storage_class: "local-path"
+  
+  # k3s optimizations for t2.micro
+  kubelet_args:
+    - "eviction-hard=memory.available<100Mi"
+    - "eviction-soft=memory.available<200Mi" 
+    - "eviction-soft-grace-period=memory.available=1m30s"
+    - "kube-reserved=cpu=100m,memory=128Mi"
+    - "system-reserved=cpu=100m,memory=128Mi"
+
+# =================================
+# MONITORING THRESHOLDS
+# =================================
+monitoring:
+  memory_threshold: 85    # % usage before alert
+  cpu_threshold: 80       # % usage before alert
+  disk_threshold: 85      # % usage before alert
+  
+  alerts:
+    enabled: true
+    interval: "5m"         # Check every 5 minutes
+    
+# =================================
+# AUTOSCALING (DISABLED per t2.micro)
+# =================================
+autoscaling:
+  enabled: false
+  backend:
+    min_replicas: 1
+    max_replicas: 1        # No scaling on t2.micro
+  frontend:
+    min_replicas: 1
+    max_replicas: 1        # No scaling on t2.micro
+
+# =================================
+# SYSTEM OPTIMIZATIONS
+# =================================
+system_tuning:
+  vm:
+    swappiness: 10
+    overcommit_memory: 1
+    dirty_ratio: 15
+    dirty_background_ratio: 5
+    
+  docker:
+    log_driver: "json-file"
+    log_max_size: "10m"
+    log_max_file: "3"
+    storage_driver: "overlay2"
+
+# =================================
+# BACKUP CONFIGURATION
+# =================================
+backup:
+  database:
+    enabled: true
+    schedule: "0 2 * * *"   # Daily at 2 AM
+    retention_days: 7
+    compression: true
+    
+# =================================
+# NETWORKING
+# =================================
+networking:
+  nodeport_range: "30002-30003"
+  external_access: true
+  security_groups:
+    - port: 22
+      protocol: "tcp"
+      source: "0.0.0.0/0"
+      description: "SSH"
+    - port: 80
+      protocol: "tcp" 
+      source: "0.0.0.0/0"
+      description: "HTTP"
+    - port: 443
+      protocol: "tcp"
+      source: "0.0.0.0/0"
+      description: "HTTPS"
+    - port: 30002
+      protocol: "tcp"
+      source: "0.0.0.0/0"
+      description: "CRM Frontend"
+    - port: 30003
+      protocol: "tcp"
+      source: "0.0.0.0/0"
+      description: "CRM Backend"
+
+# =================================
+# COST OPTIMIZATION
+# =================================
+cost_optimization:
+  spot_instances: false    # Free tier uses on-demand
+  reserved_instances: false
+  auto_shutdown: false     # Manual management
+  
+  storage:
+    type: "gp2"            # General purpose SSD
+    size: "30GB"           # Free tier limit
+    delete_on_termination: true
+
+# =================================
+# DEPLOYMENT STRATEGY
+# =================================
+deployment:
+  strategy: "rolling"
+  max_unavailable: 1
+  max_surge: 0            # No surge on single replicas
+  
+  readiness_timeout: 300   # 5 minutes
+  liveness_timeout: 600    # 10 minutes
+  
+  image_pull_policy: "IfNotPresent"  # Use local images
+
+# =================================
+# ENVIRONMENT VARIABLES
+# =================================
+environment:
+  NODE_ENV: "production"
+  AWS_REGION: "us-east-1"
+  CLUSTER_DOMAIN: "cluster.local"
+  
+# =================================
+# SCALING LIMITS
+# =================================
+scaling_limits:
+  max_pods_per_node: 10
+  max_services: 10
+  max_pvcs: 5
+  
+  # Resource limits to prevent over-allocation
+  total_cpu_limit: "800m"     # Leave 200m for system
+  total_memory_limit: "800Mi" # Leave 200Mi for system

@@ -1,0 +1,196 @@
+name: Deploy CRM to AWS EC2
+
+on:
+  push:
+    branches: [main]
+    paths: 
+      - 'devops-pipeline-fase-6/**'
+      - 'backend/**'
+      - 'frontend/**'
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 'Deploy target'
+        required: true
+        default: 'aws-t2-micro'
+        type: choice
+        options:
+          - aws-t2-micro
+          - aws-scaling
+
+jobs:
+  deploy-aws:
+    runs-on: ubuntu-latest
+    name: Deploy to AWS EC2
+    
+    env:
+      AWS_REGION: us-east-1
+      INSTANCE_NAME: crm-system-instance
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: Get EC2 instance info
+        id: instance-info
+        run: |
+          INSTANCE_INFO=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=$INSTANCE_NAME" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].[InstanceId,PublicIpAddress]' \
+            --output text || echo "None None")
+          
+          read -r INSTANCE_ID PUBLIC_IP <<< "$INSTANCE_INFO"
+          
+          if [ "$INSTANCE_ID" = "None" ]; then
+            echo "❌ No running EC2 instance found with name: $INSTANCE_NAME"
+            exit 1
+          fi
+          
+          echo "instance-id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+          echo "public-ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+          echo "✅ Found instance: $INSTANCE_ID ($PUBLIC_IP)"
+          
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/crm-key-pair.pem
+          chmod 600 ~/.ssh/crm-key-pair.pem
+          ssh-keyscan -H ${{ steps.instance-info.outputs.public-ip }} >> ~/.ssh/known_hosts
+          
+      - name: Test SSH connection
+        run: |
+          ssh -i ~/.ssh/crm-key-pair.pem -o ConnectTimeout=10 ubuntu@${{ steps.instance-info.outputs.public-ip }} 'echo "SSH connection successful"'
+          
+      - name: Sync code to EC2
+        run: |
+          # Sync repository to EC2 instance
+          rsync -avz -e "ssh -i ~/.ssh/crm-key-pair.pem" \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='*.log' \
+            ./ ubuntu@${{ steps.instance-info.outputs.public-ip }}:~/CRM-System_NEW/
+            
+      - name: Build Docker images on EC2
+        run: |
+          ssh -i ~/.ssh/crm-key-pair.pem ubuntu@${{ steps.instance-info.outputs.public-ip }} << 'EOF'
+          cd ~/CRM-System_NEW
+          
+          echo "🔨 Building backend image..."
+          cd backend
+          docker build -t crm-backend:latest . || exit 1
+          
+          echo "🔨 Building frontend image..."
+          cd ../frontend  
+          docker build -t crm-frontend:latest . || exit 1
+          
+          echo "✅ Images built successfully"
+          docker images | grep crm-
+          EOF
+          
+      - name: Deploy to Kubernetes
+        run: |
+          ssh -i ~/.ssh/crm-key-pair.pem ubuntu@${{ steps.instance-info.outputs.public-ip }} << 'EOF'
+          cd ~/CRM-System_NEW/devops-pipeline-fase-6/AWS
+          
+          echo "🚀 Deploying to k3s cluster..."
+          chmod +x scripts/*.sh
+          
+          # Deploy based on target
+          TARGET="${{ github.event.inputs.deploy_target || 'aws-t2-micro' }}"
+          echo "📋 Using profile: $TARGET"
+          
+          # Deploy application
+          ./scripts/aws-deploy.sh deploy
+          
+          echo "🔍 Verifying deployment..."
+          ./scripts/aws-deploy.sh verify
+          EOF
+          
+      - name: Run health checks
+        run: |
+          ssh -i ~/.ssh/crm-key-pair.pem ubuntu@${{ steps.instance-info.outputs.public-ip }} << 'EOF'
+          cd ~/CRM-System_NEW/devops-pipeline-fase-6/AWS
+          
+          echo "🏥 Running health checks..."
+          ./scripts/aws-monitoring.sh health
+          
+          echo "📊 Resource monitoring..."
+          ./scripts/aws-monitoring.sh resources
+          EOF
+          
+      - name: Deploy success notification
+        if: success()
+        run: |
+          echo "🎉 Deployment successful!"
+          echo "🌐 Frontend: http://${{ steps.instance-info.outputs.public-ip }}:30002"
+          echo "🔌 Backend: http://${{ steps.instance-info.outputs.public-ip }}:30003/api"
+          
+      - name: Deploy failure notification
+        if: failure()
+        run: |
+          echo "❌ Deployment failed!"
+          echo "Check the logs above for details"
+          
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f ~/.ssh/crm-key-pair.pem
+
+  backup-database:
+    runs-on: ubuntu-latest
+    name: Backup Database
+    needs: deploy-aws
+    if: success()
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: Get EC2 instance info
+        id: instance-info
+        run: |
+          INSTANCE_INFO=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=$INSTANCE_NAME" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].PublicIpAddress' \
+            --output text || echo "None")
+          
+          if [ "$INSTANCE_INFO" = "None" ]; then
+            echo "❌ No running EC2 instance found"
+            exit 1
+          fi
+          
+          echo "public-ip=$INSTANCE_INFO" >> $GITHUB_OUTPUT
+          
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/crm-key-pair.pem
+          chmod 600 ~/.ssh/crm-key-pair.pem
+          ssh-keyscan -H ${{ steps.instance-info.outputs.public-ip }} >> ~/.ssh/known_hosts
+          
+      - name: Create database backup
+        run: |
+          ssh -i ~/.ssh/crm-key-pair.pem ubuntu@${{ steps.instance-info.outputs.public-ip }} << 'EOF'
+          cd ~/CRM-System_NEW/devops-pipeline-fase-6/AWS
+          
+          echo "💾 Creating database backup..."
+          ./scripts/aws-monitoring.sh backup-database
+          
+          echo "✅ Backup completed"
+          EOF
+          
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f ~/.ssh/crm-key-pair.pem
