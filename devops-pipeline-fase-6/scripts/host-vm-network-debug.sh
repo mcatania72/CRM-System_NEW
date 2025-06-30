@@ -174,6 +174,12 @@ cleanup_port_forward() {
     
     # Kill any kubectl port-forward processes
     pkill -f "kubectl port-forward" 2>/dev/null || true
+    
+    # Rimuovi regole firewall port-forward (solo quelle con commento)
+    echo "Rimuovendo regole firewall port-forward..."
+    sudo ufw --force delete allow comment "CRM Frontend Port-Forward" 2>/dev/null || true
+    sudo ufw --force delete allow comment "CRM Backend Port-Forward" 2>/dev/null || true
+    
     echo "✅ Cleanup completato"
 }
 
@@ -194,6 +200,13 @@ setup_port_forward() {
     fi
     
     echo "Porte scelte: Frontend=${FRONTEND_FREE_PORT}, Backend=${BACKEND_FREE_PORT}"
+    echo ""
+    
+    # Apri le porte nel firewall UFW
+    echo "Aprendo porte nel firewall UFW..."
+    sudo ufw allow ${FRONTEND_FREE_PORT}/tcp comment "CRM Frontend Port-Forward"
+    sudo ufw allow ${BACKEND_FREE_PORT}/tcp comment "CRM Backend Port-Forward"
+    echo "✅ Porte aperte nel firewall"
     echo ""
     
     echo "Creando port-forward per accesso diretto..."
