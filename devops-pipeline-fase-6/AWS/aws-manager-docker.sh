@@ -159,15 +159,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     # Resource limits removed for compatibility
-    command: |
-      sh -c '
-      if [ ! -d node_modules ]; then
-        echo "Installing dependencies..."
-        npm install --production --no-audit --no-fund
-      fi
-      echo "Starting backend..."
-      npm start
-      '
+    command: ["sh", "-c", "if [ ! -d node_modules ]; then echo 'Installing dependencies...'; npm install --production --no-audit --no-fund; fi; echo 'Starting backend...'; npm start"]
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4001/api/health"]
       interval: 30s
