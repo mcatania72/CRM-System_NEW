@@ -32,7 +32,22 @@ show_usage() {
     echo "  expose     - Espone servizi con port-forward"
     echo "  firewall   - Debug firewall e iptables"
     echo "  vmware     - Fix specifici VMware networking"
+    echo "  cleanup    - Cleanup port-forward attivi"
     echo ""
+}
+
+find_free_port() {
+    local start_port=$1
+    local port=$start_port
+    
+    while netstat -tuln | grep -q ":${port} "; do
+        port=$((port + 1))
+        if [ $port -gt $((start_port + 100)) ]; then
+            echo "0"  # No free port found
+            return
+        fi
+    done
+    echo $port
 }
 
 check_vm_connectivity() {
@@ -132,29 +147,76 @@ fix_k3s_nodeport() {
     kubectl get nodes
     kubectl get services -n ${NAMESPACE}
     echo "✅ K3s restarted"
+    
+    # Verify NodePort binding
+    echo ""
+    echo "Verifica binding NodePort post-restart:"
+    sudo netstat -tulpn | grep -E ":${FRONTEND_PORT}|:${BACKEND_PORT}" || echo "❌ NodePort still not binding"
+}
+
+cleanup_port_forward() {
+    echo -e "${BLUE}🧹 Cleanup Port Forward...${NC}"
+    
+    # Kill existing port-forwards
+    if [ -f /tmp/k8s-frontend-pf.pid ]; then
+        PID=$(cat /tmp/k8s-frontend-pf.pid)
+        kill $PID 2>/dev/null || true
+        rm /tmp/k8s-frontend-pf.pid
+        echo "✅ Frontend port-forward stopped"
+    fi
+    
+    if [ -f /tmp/k8s-backend-pf.pid ]; then
+        PID=$(cat /tmp/k8s-backend-pf.pid)
+        kill $PID 2>/dev/null || true
+        rm /tmp/k8s-backend-pf.pid
+        echo "✅ Backend port-forward stopped"
+    fi
+    
+    # Kill any kubectl port-forward processes
+    pkill -f "kubectl port-forward" 2>/dev/null || true
+    echo "✅ Cleanup completato"
 }
 
 setup_port_forward() {
     echo -e "${BLUE}🚀 Setup Port Forward alternativo...${NC}"
     
+    # Cleanup existing port-forwards first
+    cleanup_port_forward
+    
+    # Find free ports (avoiding 8080 used by Jenkins)
+    echo "Cerca porte libere..."
+    FRONTEND_FREE_PORT=$(find_free_port 8090)
+    BACKEND_FREE_PORT=$(find_free_port 8091)
+    
+    if [ "$FRONTEND_FREE_PORT" == "0" ] || [ "$BACKEND_FREE_PORT" == "0" ]; then
+        echo -e "${RED}❌ Non riesco a trovare porte libere${NC}"
+        return 1
+    fi
+    
+    echo "Porte scelte: Frontend=${FRONTEND_FREE_PORT}, Backend=${BACKEND_FREE_PORT}"
+    echo ""
+    
     echo "Creando port-forward per accesso diretto..."
     echo ""
     echo "Frontend port-forward (background):"
-    kubectl port-forward -n ${NAMESPACE} --address=0.0.0.0 service/frontend-service 8080:80 &
+    kubectl port-forward -n ${NAMESPACE} --address=0.0.0.0 service/frontend-service ${FRONTEND_FREE_PORT}:80 &
     FRONTEND_PF_PID=$!
     
     echo "Backend port-forward (background):"
-    kubectl port-forward -n ${NAMESPACE} --address=0.0.0.0 service/backend-service 8081:4001 &
+    kubectl port-forward -n ${NAMESPACE} --address=0.0.0.0 service/backend-service ${BACKEND_FREE_PORT}:4001 &
     BACKEND_PF_PID=$!
     
     sleep 5
     
     echo -e "${GREEN}✅ Port forwarding attivo:${NC}"
-    echo "Frontend: http://${DEV_VM_IP}:8080"
-    echo "Backend API: http://${DEV_VM_IP}:8081/api"
+    echo "Frontend: http://${DEV_VM_IP}:${FRONTEND_FREE_PORT}"
+    echo "Backend API: http://${DEV_VM_IP}:${BACKEND_FREE_PORT}/api"
+    echo ""
+    echo "Credenziali: admin@crm.local / admin123"
     echo ""
     echo "Per terminare port-forward:"
-    echo "kill ${FRONTEND_PF_PID} ${BACKEND_PF_PID}"
+    echo "$0 cleanup"
+    echo "oppure: kill ${FRONTEND_PF_PID} ${BACKEND_PF_PID}"
     
     # Save PIDs for cleanup
     echo "${FRONTEND_PF_PID}" > /tmp/k8s-frontend-pf.pid
@@ -217,6 +279,9 @@ case "${1:-status}" in
         ;;
     "expose")
         setup_port_forward
+        ;;
+    "cleanup")
+        cleanup_port_forward
         ;;
     "firewall")
         check_vm_firewall
