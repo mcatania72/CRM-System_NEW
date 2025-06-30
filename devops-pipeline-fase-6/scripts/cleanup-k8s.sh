@@ -10,6 +10,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
 NC='\033[0m'
 
 # Configuration
@@ -42,6 +43,56 @@ confirm_cleanup() {
     if [ "$confirmation" != "yes" ]; then
         echo -e "${GREEN}✅ Cleanup cancelled${NC}"
         exit 0
+    fi
+}
+
+# Function to fix stuck deployments and ReplicaSets
+fix_stuck_deployments() {
+    echo -e "${BLUE}🔧 Fixing stuck deployments and ReplicaSets...${NC}"
+    
+    # Check if namespace exists
+    if ! $KUBECTL_CMD get namespace $NAMESPACE &>/dev/null; then
+        echo -e "${YELLOW}⚠️  Namespace $NAMESPACE does not exist${NC}"
+        return 0
+    fi
+    
+    echo "Checking for stuck deployments..."
+    
+    # Get all deployments
+    DEPLOYMENTS=$($KUBECTL_CMD get deployments -n $NAMESPACE -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+    
+    if [ -n "$DEPLOYMENTS" ]; then
+        for deployment in $DEPLOYMENTS; do
+            echo "Processing deployment: $deployment"
+            
+            # Get deployment status
+            READY=$($KUBECTL_CMD get deployment $deployment -n $NAMESPACE -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+            DESIRED=$($KUBECTL_CMD get deployment $deployment -n $NAMESPACE -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+            
+            if [ "$READY" != "$DESIRED" ]; then
+                echo -e "${YELLOW}  ⚠️  Deployment $deployment is stuck (Ready: $READY, Desired: $DESIRED)${NC}"
+                
+                # Force delete all ReplicaSets for this deployment
+                echo "  Deleting ReplicaSets for $deployment..."
+                $KUBECTL_CMD delete rs -n $NAMESPACE -l app=$deployment --force --grace-period=0 2>/dev/null || true
+                
+                # Force delete all pods for this deployment
+                echo "  Deleting pods for $deployment..."
+                $KUBECTL_CMD delete pods -n $NAMESPACE -l app=$deployment --force --grace-period=0 2>/dev/null || true
+                
+                # Scale deployment to 0 then back to desired
+                echo "  Restarting deployment $deployment..."
+                $KUBECTL_CMD scale deployment $deployment --replicas=0 -n $NAMESPACE 2>/dev/null || true
+                sleep 5
+                $KUBECTL_CMD scale deployment $deployment --replicas=$DESIRED -n $NAMESPACE 2>/dev/null || true
+                
+                echo -e "${GREEN}  ✅ Deployment $deployment restarted${NC}"
+            else
+                echo -e "${GREEN}  ✅ Deployment $deployment is healthy${NC}"
+            fi
+        done
+    else
+        echo "No deployments found in namespace $NAMESPACE"
     fi
 }
 
@@ -87,6 +138,8 @@ scale_down_deployments() {
     echo "Waiting for pods to terminate..."
     $KUBECTL_CMD wait --for=delete pod --all -n $NAMESPACE --timeout=300s 2>/dev/null || {
         echo -e "${YELLOW}⚠️  Some pods may still be terminating${NC}"
+        # Force delete remaining pods
+        $KUBECTL_CMD delete pods --all -n $NAMESPACE --force --grace-period=0 2>/dev/null || true
     }
     
     echo -e "${GREEN}✅ Deployments scaled down${NC}"
@@ -112,9 +165,13 @@ delete_resources() {
     echo "Deleting Services..."
     $KUBECTL_CMD delete svc --all -n $NAMESPACE 2>/dev/null || true
     
+    # Force delete ReplicaSets (this fixes stuck deployments)
+    echo "Force deleting ReplicaSets..."
+    $KUBECTL_CMD delete rs --all -n $NAMESPACE --force --grace-period=0 2>/dev/null || true
+    
     # Delete Deployments
     echo "Deleting Deployments..."
-    $KUBECTL_CMD delete deployment --all -n $NAMESPACE 2>/dev/null || true
+    $KUBECTL_CMD delete deployment --all -n $NAMESPACE --force --grace-period=0 2>/dev/null || true
     
     # Delete ConfigMaps
     echo "Deleting ConfigMaps..."
@@ -268,6 +325,11 @@ main() {
     local action=${1:-interactive}
     
     case $action in
+        --fix-deployments)
+            echo -e "${BLUE}🔧 FIX STUCK DEPLOYMENTS MODE${NC}"
+            fix_stuck_deployments
+            echo -e "${GREEN}✅ Deployment fix completed!${NC}"
+            ;;
         --force)
             echo -e "${RED}🚨 FORCE CLEANUP MODE${NC}"
             backup_data
@@ -299,11 +361,17 @@ main() {
             echo "Usage: $0 [option]"
             echo ""
             echo "Options:"
-            echo "  (no option)    Interactive cleanup with backup"
-            echo "  --force        Force cleanup with backup (no confirmation)"
-            echo "  --no-backup    Cleanup without backup"
+            echo "  (no option)       Interactive cleanup with backup"
+            echo "  --fix-deployments Fix stuck deployments and ReplicaSets"
+            echo "  --force           Force cleanup with backup (no confirmation)"
+            echo "  --no-backup       Cleanup without backup"
             echo "  --namespace-only  Delete only namespace (fastest)"
-            echo "  --help         Show this help"
+            echo "  --help            Show this help"
+            echo ""
+            echo "Examples:"
+            echo "  $0                     # Interactive full cleanup"
+            echo "  $0 --fix-deployments  # Fix stuck deployments only"
+            echo "  $0 --force            # Force full cleanup"
             echo ""
             exit 0
             ;;
