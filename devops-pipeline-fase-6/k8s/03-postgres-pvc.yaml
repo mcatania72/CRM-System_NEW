@@ -1,4 +1,4 @@
-# FASE 6: Persistent Volume Claim per PostgreSQL
+# FASE 6: Persistent Volume Claim per PostgreSQL (FIXED per k3s)
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -15,25 +15,4 @@ spec:
   resources:
     requests:
       storage: 10Gi
-  # Selector per identificare il volume (opzionale)
-  # Useful per riferimenti specifici se necessario
-  selector:
-    matchLabels:
-      app: postgres
----
-# Opzionale: StorageClass personalizzata se necessario
-# Per ora usiamo local-path di k3s che funziona perfettamente
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: crm-local-storage
-  annotations:
-    storageclass.kubernetes.io/is-default-class: "false"
-provisioner: rancher.io/local-path
-reclaimPolicy: Retain
-volumeBindingMode: WaitForFirstConsumer
-allowVolumeExpansion: true
-parameters:
-  # Path di default k3s: /opt/local-path-provisioner
-  # Manteniamo default per compatibilità
-  nodePath: "/opt/local-path-provisioner"
+  # RIMOSSO selector che causava problemi con local-path provisioner
