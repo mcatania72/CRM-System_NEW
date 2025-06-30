@@ -1,4 +1,4 @@
-// Jenkinsfile per la FASE 5: Testing Avanzato (Parte B: E2E) - CORRETTO v2
+// Jenkinsfile per la FASE 5: Testing Avanzato (Parte B: E2E) - Refactored
 
 pipeline {
     agent any
@@ -68,13 +68,13 @@ pipeline {
                     sh './devops-pipeline-fase-2/test-containers.sh'
 
                     echo 'Esecuzione dei test End-to-End con Playwright...'
-                    // NUOVO APPROCCIO: Usa un'immagine Node pulita per evitare conflitti
+                    // Eseguiamo i test dalla loro directory isolata
                     sh '''
                     docker run --rm \
-                        -v $(pwd)/frontend:/app \
+                        -v $(pwd)/e2e-tests:/app \
                         -w /app \
                         --network=devops-pipeline-fase-2_default \
-                        node:18-alpine /bin/sh -c "apk add --no-cache udev ttf-freefont chromium && npm ci && npx playwright test"
+                        mcr.microsoft.com/playwright:v1.40.0 /bin/bash -c "npm ci && npx playwright test"
                     '''
                 }
             }
@@ -84,7 +84,8 @@ pipeline {
     post {
         always {
             script {
-                archiveArtifacts artifacts: 'backend/coverage/lcov.info, frontend/coverage/lcov.info, frontend/playwright-report/', allowEmptyArchive: true
+                // Aggiorniamo il percorso degli artefatti
+                archiveArtifacts artifacts: 'backend/coverage/lcov.info, frontend/coverage/lcov.info, e2e-tests/playwright-report/', allowEmptyArchive: true
                 sh "docker-compose -f ${env.COMPOSE_FILE} down --volumes"
             }
         }
