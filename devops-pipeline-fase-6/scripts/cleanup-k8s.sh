@@ -57,6 +57,74 @@ confirm_cleanup() {
     fi
 }
 
+# Function to fix stuck deployments and ReplicaSets
+fix_stuck_deployments() {
+    echo -e "${BLUE}🔧 Fixing stuck deployments e ReplicaSets...${NC}"
+    
+    # Check if namespace exists
+    if ! $KUBECTL_CMD get namespace $NAMESPACE &>/dev/null; then
+        echo -e "${YELLOW}⚠️  Namespace $NAMESPACE non esiste${NC}"
+        return 0
+    fi
+    
+    echo "Controllando deployment stuck..."
+    
+    # Get all deployments
+    DEPLOYMENTS=$($KUBECTL_CMD get deployments -n $NAMESPACE -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+    
+    if [ -n "$DEPLOYMENTS" ]; then
+        for deployment in $DEPLOYMENTS; do
+            echo "Processando deployment: $deployment"
+            
+            # Get deployment status
+            READY=$($KUBECTL_CMD get deployment $deployment -n $NAMESPACE -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+            DESIRED=$($KUBECTL_CMD get deployment $deployment -n $NAMESPACE -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+            UNAVAILABLE=$($KUBECTL_CMD get deployment $deployment -n $NAMESPACE -o jsonpath='{.status.unavailableReplicas}' 2>/dev/null || echo "0")
+            
+            if [ "$READY" != "$DESIRED" ] || [ "$UNAVAILABLE" -gt 0 ]; then
+                echo -e "${YELLOW}  ⚠️  Deployment $deployment è stuck (Ready: $READY, Desired: $DESIRED, Unavailable: $UNAVAILABLE)${NC}"
+                
+                # Get ReplicaSets for this deployment
+                echo "  Trovando ReplicaSets per $deployment..."
+                REPLICASETS=$($KUBECTL_CMD get rs -n $NAMESPACE -l app=$deployment -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+                
+                if [ -n "$REPLICASETS" ]; then
+                    echo "  ReplicaSets trovati: $REPLICASETS"
+                    
+                    for rs in $REPLICASETS; do
+                        RS_REPLICAS=$($KUBECTL_CMD get rs $rs -n $NAMESPACE -o jsonpath='{.status.replicas}' 2>/dev/null || echo "0")
+                        RS_READY=$($KUBECTL_CMD get rs $rs -n $NAMESPACE -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+                        
+                        echo "  ReplicaSet $rs: $RS_READY/$RS_REPLICAS ready"
+                        
+                        if [ "$RS_READY" != "$RS_REPLICAS" ] || [ "$RS_REPLICAS" -gt 0 ]; then
+                            echo "  Force deleting stuck ReplicaSet: $rs"
+                            $KUBECTL_CMD delete rs $rs -n $NAMESPACE --force --grace-period=0 2>/dev/null || true
+                        fi
+                    done
+                fi
+                
+                # Force delete all pods for this deployment
+                echo "  Force deleting pods per $deployment..."
+                $KUBECTL_CMD delete pods -n $NAMESPACE -l app=$deployment --force --grace-period=0 2>/dev/null || true
+                
+                # Wait a moment
+                sleep 3
+                
+                # Check status after cleanup
+                READY_AFTER=$($KUBECTL_CMD get deployment $deployment -n $NAMESPACE -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+                echo -e "${GREEN}  ✅ Deployment $deployment processato (Ready after: $READY_AFTER)${NC}"
+            else
+                echo -e "${GREEN}  ✅ Deployment $deployment è healthy${NC}"
+            fi
+        done
+    else
+        echo "Nessun deployment trovato in namespace $NAMESPACE"
+    fi
+    
+    echo -e "${GREEN}✅ Fix deployment stuck completato${NC}"
+}
+
 # Function to backup data before cleanup
 backup_data() {
     echo -e "${BLUE}💾 Creazione backup prima del cleanup...${NC}"
