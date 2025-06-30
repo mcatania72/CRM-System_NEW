@@ -56,8 +56,7 @@ spec:
             name: backend-service
             port:
               number: 4001
-  - host: 192.168.1.29
-    http:
+  - http:
       paths:
       - path: /
         pathType: Prefix
