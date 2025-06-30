@@ -130,16 +130,7 @@ install_docker() {
     "max-size": "10m",
     "max-file": "3"
   },
-  "storage-driver": "overlay2",
-  "storage-opts": [
-    "overlay2.override_kernel_check=true"
-  ],
-  "default-ulimits": {
-    "memlock": {
-      "hard": 67108864,
-      "soft": 67108864
-    }
-  }
+  "storage-driver": "overlay2"
 }
 EOF
     

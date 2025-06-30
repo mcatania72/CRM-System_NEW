@@ -82,7 +82,6 @@ setup_docker() {
     "max-size": "10m",
     "max-file": "3"
   },
-
   "storage-driver": "overlay2"
 }
 EOF
