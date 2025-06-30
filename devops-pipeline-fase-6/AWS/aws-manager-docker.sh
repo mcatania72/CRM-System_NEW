@@ -82,12 +82,7 @@ setup_docker() {
     "max-size": "10m",
     "max-file": "3"
   },
-  "default-ulimits": {
-    "memlock": {
-      "hard": 67108864,
-      "soft": 67108864
-    }
-  },
+
   "storage-driver": "overlay2"
 }
 EOF
@@ -111,8 +106,6 @@ setup_project() {
     
     # Crea docker-compose.yml ottimizzato per t2.micro
     cat > docker-compose.yml << 'EOF'
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -128,14 +121,7 @@ services:
     ports:
       - "5432:5432"
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 200M
-          cpus: '0.3'
-        reservations:
-          memory: 100M
-          cpus: '0.1'
+    # Resource limits removed for compatibility
     command: >
       postgres
       -c shared_buffers=32MB
@@ -173,14 +159,7 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 120M
-          cpus: '0.3'
-        reservations:
-          memory: 60M
-          cpus: '0.1'
+    # Resource limits removed for compatibility
     command: >
       sh -c "
       if [ ! -d node_modules ]; then
@@ -207,14 +186,7 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 50M
-          cpus: '0.2'
-        reservations:
-          memory: 20M
-          cpus: '0.05'
+    # Resource limits removed for compatibility
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
       interval: 30s
