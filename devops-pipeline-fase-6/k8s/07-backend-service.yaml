@@ -13,6 +13,7 @@ metadata:
     service.beta.kubernetes.io/aws-load-balancer-type: nlb  # Per future AWS
 spec:
   type: NodePort  # Espone su porta fissa per compatibilità
+  externalTrafficPolicy: Cluster  # ← FIX: AGGIUNTO per NodePort binding corretto
   ports:
   - name: http
     port: 4001        # Porta interna del service

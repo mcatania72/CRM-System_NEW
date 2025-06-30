@@ -217,6 +217,41 @@ health_checks() {
     $KUBECTL_CMD get services -n $NAMESPACE
 }
 
+# Function to check NodePort binding
+check_nodeport_binding() {
+    echo -e "${BLUE}🔍 Checking NodePort binding...${NC}"
+    
+    local frontend_port="30002"
+    local backend_port="30003"
+    local binding_ok=true
+    
+    # Check if ports are listening
+    if ! netstat -tulpn 2>/dev/null | grep -q ":$frontend_port"; then
+        echo -e "${YELLOW}⚠️  Port $frontend_port (frontend) not listening${NC}"
+        binding_ok=false
+    else
+        echo -e "${GREEN}✅ Port $frontend_port (frontend) listening${NC}"
+    fi
+    
+    if ! netstat -tulpn 2>/dev/null | grep -q ":$backend_port"; then
+        echo -e "${YELLOW}⚠️  Port $backend_port (backend) not listening${NC}"
+        binding_ok=false
+    else
+        echo -e "${GREEN}✅ Port $backend_port (backend) listening${NC}"
+    fi
+    
+    if [ "$binding_ok" = false ]; then
+        echo -e "${YELLOW}⚠️  NodePort binding issues detected${NC}"
+        echo -e "${BLUE}💡 Suggested actions:${NC}"
+        echo "   1. Run: ./scripts/nodeport-safe.sh fix"
+        echo "   2. Or use: ./scripts/host-vm-network-debug.sh expose"
+        return 1
+    else
+        echo -e "${GREEN}✅ NodePort binding OK${NC}"
+        return 0
+    fi
+}
+
 # Function to show access information
 show_access_info() {
     echo -e "${PURPLE}=== 🌐 ACCESS INFORMATION ===${NC}"
@@ -277,6 +312,11 @@ start_deployment() {
     
     # Health checks
     health_checks
+    
+    # Check NodePort binding
+    if ! check_nodeport_binding; then
+        echo -e "${YELLOW}⚠️  NodePort binding issues - see suggestions above${NC}"
+    fi
     
     # Show access info
     show_access_info
