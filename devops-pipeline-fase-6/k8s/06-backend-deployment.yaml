@@ -1,0 +1,192 @@
+# FASE 6: Backend Application Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: crm-system
+  labels:
+    app: backend
+    component: application
+    tier: backend
+spec:
+  replicas: 2  # High availability con 2 replicas
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1      # Sempre almeno 1 replica disponibile
+      maxSurge: 1           # Massimo 1 replica extra durante update
+  selector:
+    matchLabels:
+      app: backend
+      component: application
+  template:
+    metadata:
+      labels:
+        app: backend
+        component: application
+        tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "4001"
+        prometheus.io/path: "/api/health"
+    spec:
+      # Security context
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        fsGroup: 1001
+      
+      # Init container per aspettare PostgreSQL (opzionale ma raccomandato)
+      initContainers:
+      - name: wait-for-postgres
+        image: postgres:16-alpine
+        command:
+        - /bin/sh
+        - -c
+        - |
+          until pg_isready -h postgres-service -p 5432 -U postgres; do
+            echo "Waiting for PostgreSQL to be ready..."
+            sleep 2
+          done
+          echo "PostgreSQL is ready!"
+        env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: password
+      
+      containers:
+      - name: backend
+        image: crm-backend:latest  # Image buildato dalla FASE 2
+        imagePullPolicy: IfNotPresent
+        
+        # Resource allocation per DEV_VM
+        resources:
+          requests:
+            memory: "256Mi"    # Base per ogni replica
+            cpu: "100m"        # 2.5% per replica
+          limits:
+            memory: "512Mi"    # Max per replica
+            cpu: "500m"        # Max 12.5% per replica
+        
+        # Environment variables
+        env:
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: NODE_ENV
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: PORT
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: DB_HOST
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: DB_PORT
+        - name: DB_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: DB_DATABASE
+        - name: DB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: password
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: backend-secret
+              key: jwt-secret
+        - name: FRONTEND_URL
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: FRONTEND_URL
+        - name: CORS_ORIGIN
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: CORS_ORIGIN
+        
+        # Port exposure
+        ports:
+        - name: http
+          containerPort: 4001
+          protocol: TCP
+        
+        # Health checks
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 4001
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 4001
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+          successThreshold: 1
+        
+        # Startup probe per applicazioni che richiedono tempo
+        startupProbe:
+          httpGet:
+            path: /api/health
+            port: 4001
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30  # 5 minuti max
+          successThreshold: 1
+        
+        # Volume mounts se necessario (per ora non servono)
+        # volumeMounts: []
+      
+      # Restart policy
+      restartPolicy: Always
+      
+      # DNS policy
+      dnsPolicy: ClusterFirst
+      
+      # Grace period per shutdown
+      terminationGracePeriodSeconds: 30
+      
+      # Affinity per distribuzione delle repliche
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - backend
+              topologyKey: kubernetes.io/hostname

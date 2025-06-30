@@ -1,0 +1,140 @@
+# FASE 6: PostgreSQL Database Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: crm-system
+  labels:
+    app: postgres
+    component: database
+    tier: data
+spec:
+  replicas: 1  # Single instance per development
+  strategy:
+    type: Recreate  # Importante per database con storage
+  selector:
+    matchLabels:
+      app: postgres
+      component: database
+  template:
+    metadata:
+      labels:
+        app: postgres
+        component: database
+        tier: data
+    spec:
+      # Security context per non-root execution
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        imagePullPolicy: IfNotPresent
+        
+        # Resource allocation ottimizzata per DEV_VM
+        resources:
+          requests:
+            memory: "512Mi"    # Base allocation
+            cpu: "200m"        # 5% di 4 cores
+          limits:
+            memory: "2Gi"      # Max allocation (~8% delle 24GB)
+            cpu: "1000m"       # Max 25% di 4 cores
+        
+        # Environment variables da secrets e config
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: password
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: database
+        - name: PGDATA
+          value: "/var/lib/postgresql/data/pgdata"
+        
+        # PostgreSQL performance tuning per container
+        - name: POSTGRES_SHARED_BUFFERS
+          value: "256MB"     # 25% della memory request
+        - name: POSTGRES_EFFECTIVE_CACHE_SIZE
+          value: "1GB"       # 50% della memory limit
+        - name: POSTGRES_MAX_CONNECTIONS
+          value: "100"
+        - name: POSTGRES_WORK_MEM
+          value: "4MB"
+        - name: POSTGRES_MAINTENANCE_WORK_MEM
+          value: "64MB"
+        
+        # Port exposure
+        ports:
+        - name: postgres
+          containerPort: 5432
+          protocol: TCP
+        
+        # Volume mount per persistenza
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+          subPath: postgres  # Sottodirectory per organizzazione
+        
+        # Health checks ottimizzati
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+          successThreshold: 1
+        
+        # Startup probe per gestire l'inizializzazione
+        startupProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30  # 5 minuti max per startup
+          successThreshold: 1
+      
+      # Volume definition
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+      
+      # Restart policy
+      restartPolicy: Always
+      
+      # DNS policy per risoluzione nomi interni
+      dnsPolicy: ClusterFirst
+      
+      # Termination grace period per shutdown pulito
+      terminationGracePeriodSeconds: 60

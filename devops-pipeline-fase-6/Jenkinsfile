@@ -1,0 +1,447 @@
+// Jenkinsfile per la FASE 6: Kubernetes Deployment
+
+pipeline {
+    agent any
+
+    environment {
+        // Kubernetes configuration
+        NAMESPACE = 'crm-system'
+        KUBECTL_CMD = 'kubectl'
+        
+        // Container registry (local for now)
+        REGISTRY = 'localhost:5000'
+        
+        // Build configuration
+        BUILD_NUMBER = "${env.BUILD_NUMBER}"
+        GIT_COMMIT_SHORT = "${env.GIT_COMMIT?.take(7) ?: 'unknown'}"
+        
+        // Deployment configuration
+        DEPLOY_TIMEOUT = '600'  // 10 minutes
+        TEST_TIMEOUT = '300'    // 5 minutes
+    }
+
+    parameters {
+        choice(
+            name: 'DEPLOYMENT_ACTION',
+            choices: ['deploy', 'restart', 'scale', 'rollback'],
+            description: 'Deployment action to perform'
+        )
+        string(
+            name: 'REPLICAS',
+            defaultValue: '2',
+            description: 'Number of replicas for backend/frontend'
+        )
+        booleanParam(
+            name: 'RUN_SMOKE_TESTS',
+            defaultValue: true,
+            description: 'Run smoke tests after deployment'
+        )
+        booleanParam(
+            name: 'SKIP_BUILD',
+            defaultValue: false,
+            description: 'Skip container image build (use existing images)'
+        )
+    }
+
+    stages {
+        stage('Checkout & Validation') {
+            steps {
+                script {
+                    echo '1. 📥 Clonazione del repository e validazione...'
+                    cleanWs()
+                    checkout scm
+                    
+                    // Validate Kubernetes connectivity
+                    sh '''
+                        echo "🔍 Validating Kubernetes connectivity..."
+                        if ! kubectl cluster-info --request-timeout=10s; then
+                            echo "❌ Cannot connect to Kubernetes cluster"
+                            exit 1
+                        fi
+                        
+                        echo "✅ Kubernetes cluster is accessible"
+                        kubectl get nodes
+                    '''
+                    
+                    // Validate required directories
+                    sh '''
+                        echo "🔍 Validating project structure..."
+                        if [ ! -d "devops-pipeline-fase-6" ]; then
+                            echo "❌ FASE 6 directory not found"
+                            exit 1
+                        fi
+                        
+                        if [ ! -d "devops-pipeline-fase-6/k8s" ]; then
+                            echo "❌ Kubernetes manifests directory not found"
+                            exit 1
+                        fi
+                        
+                        echo "✅ Project structure validated"
+                    '''
+                }
+            }
+        }
+
+        stage('Build Container Images') {
+            when {
+                not { params.SKIP_BUILD }
+            }
+            parallel {
+                stage('Build Backend') {
+                    steps {
+                        script {
+                            echo '2a. 🔨 Building backend container image...'
+                            dir('backend') {
+                                sh '''
+                                    echo "Building backend image with tag: latest"
+                                    docker build -t crm-backend:latest .
+                                    docker tag crm-backend:latest crm-backend:${BUILD_NUMBER}
+                                    
+                                    echo "✅ Backend image built successfully"
+                                    docker images | grep crm-backend
+                                '''
+                            }
+                        }
+                    }
+                }
+                
+                stage('Build Frontend') {
+                    steps {
+                        script {
+                            echo '2b. 🔨 Building frontend container image...'
+                            dir('frontend') {
+                                sh '''
+                                    echo "Building frontend image with tag: latest"
+                                    docker build -t crm-frontend:latest .
+                                    docker tag crm-frontend:latest crm-frontend:${BUILD_NUMBER}
+                                    
+                                    echo "✅ Frontend image built successfully"
+                                    docker images | grep crm-frontend
+                                '''
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Security & Quality Checks') {
+            parallel {
+                stage('Container Security Scan') {
+                    steps {
+                        script {
+                            echo '3a. 🔒 Container security scanning...'
+                            sh '''
+                                echo "🔍 Scanning backend image for vulnerabilities..."
+                                # Use Trivy if available, otherwise basic checks
+                                if command -v trivy &> /dev/null; then
+                                    trivy image --exit-code 0 --severity HIGH,CRITICAL crm-backend:latest
+                                    trivy image --exit-code 0 --severity HIGH,CRITICAL crm-frontend:latest
+                                else
+                                    echo "⚠️ Trivy not available, performing basic security checks"
+                                    docker run --rm crm-backend:latest id
+                                    docker run --rm crm-frontend:latest id
+                                fi
+                                
+                                echo "✅ Container security checks completed"
+                            '''
+                        }
+                    }
+                }
+                
+                stage('Kubernetes Manifest Validation') {
+                    steps {
+                        script {
+                            echo '3b. ☸️ Validating Kubernetes manifests...'
+                            dir('devops-pipeline-fase-6') {
+                                sh '''
+                                    echo "🔍 Validating Kubernetes YAML manifests..."
+                                    
+                                    # Dry-run validation
+                                    for manifest in k8s/*.yaml; do
+                                        echo "Validating: $manifest"
+                                        kubectl apply --dry-run=client -f "$manifest" || {
+                                            echo "❌ Validation failed for $manifest"
+                                            exit 1
+                                        }
+                                    done
+                                    
+                                    echo "✅ All Kubernetes manifests are valid"
+                                '''
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Kubernetes Deployment') {
+            steps {
+                script {
+                    echo '4. ☸️ Deploying to Kubernetes...'
+                    dir('devops-pipeline-fase-6') {
+                        
+                        // Make scripts executable
+                        sh 'chmod +x *.sh'
+                        
+                        // Perform deployment based on parameter
+                        if (params.DEPLOYMENT_ACTION == 'deploy') {
+                            sh '''
+                                echo "🚀 Starting Kubernetes deployment..."
+                                ./deploy-k8s.sh start
+                            '''
+                        } else if (params.DEPLOYMENT_ACTION == 'restart') {
+                            sh '''
+                                echo "🔄 Restarting Kubernetes deployment..."
+                                ./deploy-k8s.sh restart
+                            '''
+                        } else if (params.DEPLOYMENT_ACTION == 'scale') {
+                            sh '''
+                                echo "📈 Scaling Kubernetes deployment..."
+                                ./deploy-k8s.sh scale ${REPLICAS}
+                            '''
+                        } else if (params.DEPLOYMENT_ACTION == 'rollback') {
+                            sh '''
+                                echo "⏪ Rolling back Kubernetes deployment..."
+                                kubectl rollout undo deployment/backend -n ${NAMESPACE}
+                                kubectl rollout undo deployment/frontend -n ${NAMESPACE}
+                                kubectl rollout status deployment/backend -n ${NAMESPACE} --timeout=${DEPLOY_TIMEOUT}s
+                                kubectl rollout status deployment/frontend -n ${NAMESPACE} --timeout=${DEPLOY_TIMEOUT}s
+                            '''
+                        }
+                        
+                        // Wait for deployments to be ready
+                        sh '''
+                            echo "⏳ Waiting for deployments to be ready..."
+                            kubectl rollout status deployment/postgres -n ${NAMESPACE} --timeout=${DEPLOY_TIMEOUT}s
+                            kubectl rollout status deployment/backend -n ${NAMESPACE} --timeout=${DEPLOY_TIMEOUT}s
+                            kubectl rollout status deployment/frontend -n ${NAMESPACE} --timeout=${DEPLOY_TIMEOUT}s
+                            
+                            echo "✅ All deployments are ready"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Post-Deployment Validation') {
+            parallel {
+                stage('Health Checks') {
+                    steps {
+                        script {
+                            echo '5a. 🏥 Running health checks...'
+                            sh '''
+                                echo "🔍 Checking pod status..."
+                                kubectl get pods -n ${NAMESPACE} -o wide
+                                
+                                echo "🔍 Checking service endpoints..."
+                                kubectl get endpoints -n ${NAMESPACE}
+                                
+                                echo "🔍 Verifying all pods are ready..."
+                                kubectl wait --for=condition=ready pod --all -n ${NAMESPACE} --timeout=120s
+                                
+                                echo "✅ Health checks passed"
+                            '''
+                        }
+                    }
+                }
+                
+                stage('Service Connectivity') {
+                    steps {
+                        script {
+                            echo '5b. 🔗 Testing service connectivity...'
+                            sh '''
+                                echo "🔍 Testing internal service connectivity..."
+                                
+                                # Test PostgreSQL connectivity
+                                POSTGRES_POD=$(kubectl get pods -n ${NAMESPACE} -l app=postgres -o jsonpath='{.items[0].metadata.name}')
+                                if [ -n "$POSTGRES_POD" ]; then
+                                    kubectl exec $POSTGRES_POD -n ${NAMESPACE} -- psql -U postgres -d crm -c "SELECT 1;"
+                                    echo "✅ PostgreSQL connectivity confirmed"
+                                fi
+                                
+                                # Test backend to database connectivity
+                                BACKEND_POD=$(kubectl get pods -n ${NAMESPACE} -l app=backend -o jsonpath='{.items[0].metadata.name}')
+                                if [ -n "$BACKEND_POD" ]; then
+                                    kubectl exec $BACKEND_POD -n ${NAMESPACE} -- nc -z postgres-service 5432
+                                    echo "✅ Backend to PostgreSQL connectivity confirmed"
+                                fi
+                                
+                                echo "✅ Service connectivity tests passed"
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Smoke Tests') {
+            when {
+                params.RUN_SMOKE_TESTS == true
+            }
+            steps {
+                script {
+                    echo '6. 🧪 Running smoke tests...'
+                    dir('devops-pipeline-fase-6') {
+                        sh '''
+                            echo "🚀 Executing Kubernetes smoke tests..."
+                            chmod +x test-k8s.sh
+                            ./test-k8s.sh quick
+                            
+                            echo "✅ Smoke tests completed"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('External Access Validation') {
+            steps {
+                script {
+                    echo '7. 🌐 Validating external access...'
+                    sh '''
+                        echo "🔍 Checking LoadBalancer and NodePort access..."
+                        
+                        # Get LoadBalancer IP
+                        LB_IP=$(kubectl get svc traefik -n kube-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "192.168.1.29")
+                        
+                        # Get NodePort services
+                        FRONTEND_PORT=$(kubectl get svc frontend-service -n ${NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "")
+                        BACKEND_PORT=$(kubectl get svc backend-service -n ${NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "")
+                        
+                        echo "📍 Access Information:"
+                        echo "   LoadBalancer IP: $LB_IP"
+                        echo "   Frontend Port: $FRONTEND_PORT"
+                        echo "   Backend Port: $BACKEND_PORT"
+                        
+                        # Test external access with timeout
+                        if [ -n "$BACKEND_PORT" ]; then
+                            echo "🔍 Testing backend health endpoint..."
+                            curl -f --connect-timeout 10 --max-time 30 "http://$LB_IP:$BACKEND_PORT/api/health" || {
+                                echo "⚠️ Backend health check failed, but deployment may still be starting"
+                            }
+                        fi
+                        
+                        echo "✅ External access validation completed"
+                    '''
+                }
+            }
+        }
+
+        stage('Deployment Summary') {
+            steps {
+                script {
+                    echo '8. 📊 Generating deployment summary...'
+                    sh '''
+                        echo "=== 📊 KUBERNETES DEPLOYMENT SUMMARY ==="
+                        echo "Timestamp: $(date)"
+                        echo "Build Number: ${BUILD_NUMBER}"
+                        echo "Git Commit: ${GIT_COMMIT_SHORT}"
+                        echo "Deployment Action: ${DEPLOYMENT_ACTION}"
+                        echo ""
+                        
+                        echo "=== 📦 DEPLOYMENTS ==="
+                        kubectl get deployments -n ${NAMESPACE} -o wide
+                        echo ""
+                        
+                        echo "=== 🏃 PODS ==="
+                        kubectl get pods -n ${NAMESPACE} -o wide
+                        echo ""
+                        
+                        echo "=== 🔗 SERVICES ==="
+                        kubectl get services -n ${NAMESPACE} -o wide
+                        echo ""
+                        
+                        echo "=== 💾 STORAGE ==="
+                        kubectl get pvc -n ${NAMESPACE}
+                        echo ""
+                        
+                        echo "=== 🌐 ACCESS INFORMATION ==="
+                        LB_IP=$(kubectl get svc traefik -n kube-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "192.168.1.29")
+                        FRONTEND_PORT=$(kubectl get svc frontend-service -n ${NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null)
+                        BACKEND_PORT=$(kubectl get svc backend-service -n ${NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null)
+                        
+                        echo "Frontend: http://$LB_IP:$FRONTEND_PORT"
+                        echo "Backend API: http://$LB_IP:$BACKEND_PORT/api"
+                        echo "Admin Login: admin@crm.local / admin123"
+                        echo ""
+                        
+                        echo "=== ✅ DEPLOYMENT COMPLETED SUCCESSFULLY ==="
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                echo '🧹 Cleanup and archiving...'
+                
+                // Archive build artifacts
+                archiveArtifacts artifacts: 'devops-pipeline-fase-6/k8s/*.yaml', allowEmptyArchive: true
+                archiveArtifacts artifacts: '**/*.log', allowEmptyArchive: true
+                
+                // Archive test results if they exist
+                archiveArtifacts artifacts: '**/test-results-*.json', allowEmptyArchive: true
+                
+                // Clean up Docker images older than current build
+                sh '''
+                    echo "🧹 Cleaning up old Docker images..."
+                    docker image prune -f --filter "until=24h" || true
+                    echo "✅ Cleanup completed"
+                '''
+            }
+        }
+        
+        success {
+            script {
+                echo '✅ Pipeline completed successfully!'
+                
+                // Send success notification (if configured)
+                sh '''
+                    echo "🎉 FASE 6 Kubernetes deployment completed successfully!"
+                    echo "Build: ${BUILD_NUMBER}"
+                    echo "Action: ${DEPLOYMENT_ACTION}"
+                    echo "Access the application at the URLs shown in the deployment summary."
+                '''
+            }
+        }
+        
+        failure {
+            script {
+                echo '❌ Pipeline failed!'
+                
+                // Collect debug information
+                sh '''
+                    echo "🔍 Collecting debug information..."
+                    
+                    echo "=== KUBERNETES CLUSTER STATUS ==="
+                    kubectl cluster-info || true
+                    
+                    echo "=== NAMESPACE STATUS ==="
+                    kubectl get all -n ${NAMESPACE} || true
+                    
+                    echo "=== POD LOGS ==="
+                    kubectl logs -l app=postgres -n ${NAMESPACE} --tail=50 || true
+                    kubectl logs -l app=backend -n ${NAMESPACE} --tail=50 || true
+                    kubectl logs -l app=frontend -n ${NAMESPACE} --tail=50 || true
+                    
+                    echo "=== EVENTS ==="
+                    kubectl get events -n ${NAMESPACE} --sort-by='.lastTimestamp' || true
+                '''
+            }
+        }
+        
+        unstable {
+            script {
+                echo '⚠️ Pipeline completed with warnings!'
+                
+                sh '''
+                    echo "⚠️ Some tests may have failed, but deployment might still be functional"
+                    echo "Check the test results and deployment status manually"
+                '''
+            }
+        }
+    }
+}

@@ -1,0 +1,209 @@
+# FASE 6: Profilo configurazione per AWS EC2 t2.micro
+# Ottimizzato per AWS Free Tier con risorse limitate
+
+# Environment info
+environment: aws_free_tier
+vm_type: t2_micro
+resources:
+  cpu_cores: 1
+  memory_gb: 1
+  storage_gb: 30
+
+# Kubernetes configuration
+kubernetes:
+  cluster_type: k3s  # Lightweight per t2.micro
+  storage_class: local-path
+  load_balancer_ip: "AUTO"  # AWS EIP
+
+# Resource allocation (minimal per t2.micro)
+resources_allocation:
+  postgresql:
+    replicas: 1
+    requests:
+      memory: "128Mi"  # 12.5% della RAM
+      cpu: "50m"       # 5% della CPU
+    limits:
+      memory: "256Mi"  # 25% della RAM
+      cpu: "200m"      # 20% della CPU
+    storage: "5Gi"     # Conservativo
+    
+  backend:
+    replicas: 1  # Single replica per conservare memoria
+    requests:
+      memory: "64Mi"   # 6% della RAM
+      cpu: "25m"       # 2.5% della CPU
+    limits:
+      memory: "128Mi"  # 12.5% della RAM
+      cpu: "100m"      # 10% della CPU
+    
+  frontend:
+    replicas: 1  # Single replica
+    requests:
+      memory: "32Mi"   # 3% della RAM
+      cpu: "10m"       # 1% della CPU
+    limits:
+      memory: "64Mi"   # 6% della RAM
+      cpu: "50m"       # 5% della CPU
+
+# Autoscaling configuration (disabled per t2.micro)
+autoscaling:
+  backend:
+    min_replicas: 1
+    max_replicas: 1  # No scaling su t2.micro
+    cpu_threshold: 90  # Soglia alta per evitare scaling
+    memory_threshold: 90
+    
+  frontend:
+    min_replicas: 1
+    max_replicas: 1  # No scaling
+    cpu_threshold: 90
+    memory_threshold: 90
+
+# Network configuration
+networking:
+  frontend_nodeport: 30002
+  backend_nodeport: 30003
+  ingress_enabled: true
+  load_balancer_enabled: true
+
+# Database configuration (tuned per t2.micro)
+database:
+  type: postgresql
+  version: "16-alpine"
+  shared_buffers: "32MB"    # Molto basso
+  effective_cache_size: "64MB"  # Limitato
+  max_connections: 20       # Ridotto drasticamente
+  work_mem: "1MB"          # Minimo
+  maintenance_work_mem: "16MB"
+
+# Security settings
+security:
+  network_policies_enabled: false  # Disabilitato per risparmiare risorse
+  pod_security_policies_enabled: false
+  rbac_enabled: true
+
+# Monitoring and logging (minimal)
+monitoring:
+  metrics_enabled: false  # Disabilitato per risparmiare risorse
+  logging_level: "error"  # Solo errori
+  health_check_interval: 60  # Meno frequente
+
+# Production specific settings
+production:
+  debug_mode: false
+  verbose_logging: false
+  resource_optimization: true
+  swap_accounting: true
+
+# Performance tuning (conservative)
+performance:
+  startup_probe_failure_threshold: 60  # Più tempo per startup
+  readiness_probe_period: 10
+  liveness_probe_period: 30
+  termination_grace_period: 60
+
+# Backup configuration (FASE 6.5)
+backup:
+  enabled: false  # Inizialmente disabilitato per risorse
+  schedule: "0 3 * * 0"  # Weekly invece di daily
+  retention_days: 3   # Ridotto per storage
+
+# AWS specific configuration
+aws:
+  region: "us-east-1"  # Free tier region
+  instance_type: "t2.micro"
+  ebs_volume_type: "gp2"
+  security_groups:
+    - name: "crm-k8s-sg"
+      ingress:
+        - port: 22    # SSH
+        - port: 80    # HTTP
+        - port: 443   # HTTPS
+        - port: 30002 # Frontend NodePort
+        - port: 30003 # Backend NodePort
+
+# Migration settings
+migration:
+  from_dev_vm: true
+  data_migration_strategy: "export_import"
+  downtime_acceptable: true
+  rollback_plan: "vm_snapshot"
+
+# Cost optimization
+cost_optimization:
+  auto_shutdown: false  # Manual management
+  resource_monitoring: true
+  alerts_enabled: true
+  budget_limit_usd: 15  # Monthly budget
+
+# Limitations and warnings
+limitations:
+  memory_constrained: true
+  single_replica_only: true
+  no_autoscaling: true
+  limited_concurrent_users: 5
+  performance_impact: "significant"
+
+# Alternative configurations
+alternatives:
+  upgrade_path:
+    - instance_type: "t3.small"
+      memory_gb: 2
+      cost_increase: "$15/month"
+      benefits: "Better performance, autoscaling possible"
+    
+    - managed_services:
+        rds: "AWS RDS PostgreSQL t3.micro"
+        compute: "AWS Fargate"
+        cost_estimate: "$25-30/month"
+
+# Notes for AWS t2.micro deployment
+notes: |
+  This profile is optimized for AWS EC2 t2.micro with extreme resource constraints:
+  - 1 vCPU (burstable)
+  - 1GB RAM
+  - 30GB EBS storage
+  
+  Key optimizations:
+  - Single replica deployments only
+  - Minimal resource requests/limits
+  - Disabled autoscaling and monitoring
+  - Reduced PostgreSQL configuration
+  - Conservative health check intervals
+  
+  Expected performance:
+  - 2-5 concurrent users maximum
+  - Slower response times (500ms-2s)
+  - Limited to basic CRM operations
+  
+  This is suitable for:
+  - Demo environments
+  - POC deployments
+  - Learning Kubernetes
+  - Cost-conscious development
+  
+  For production workloads, consider upgrading to t3.small or using managed services.
+
+# Deployment commands for AWS
+deployment_commands:
+  setup: |
+    # Install k3s on EC2 t2.micro
+    curl -sfL https://get.k3s.io | sh -s - --write-kubeconfig-mode 644
+    
+    # Apply AWS-specific resource limits
+    kubectl apply -f profiles/aws-micro-limits.yaml
+    
+    # Deploy with minimal profile
+    ./deploy-k8s.sh start --profile=aws-micro
+    
+  monitoring: |
+    # Basic monitoring commands
+    kubectl top nodes
+    kubectl get pods -n crm-system -o wide
+    free -h && df -h
+    
+  troubleshooting: |
+    # Common issues on t2.micro
+    # 1. Out of memory: kubectl describe pods -n crm-system
+    # 2. Slow startup: Check CloudWatch CPU credits
+    # 3. Storage full: df -h && docker system prune -f

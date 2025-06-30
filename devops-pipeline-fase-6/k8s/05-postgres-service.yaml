@@ -1,0 +1,43 @@
+# FASE 6: PostgreSQL Internal Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: crm-system
+  labels:
+    app: postgres
+    component: database
+    tier: data
+  annotations:
+    description: "Internal PostgreSQL service for CRM backend"
+spec:
+  type: ClusterIP  # Internal service only
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: 5432
+    protocol: TCP
+  selector:
+    app: postgres
+    component: database
+  
+  # Service discovery ottimizzata
+  clusterIP: None  # Headless service per discovery diretto
+  sessionAffinity: ClientIP  # Mantieni connessioni per performance
+  
+  # Timeout settings
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800  # 3 ore
+---
+# Endpoint slice per monitoring (opzionale ma utile)
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: postgres-service
+  namespace: crm-system
+  labels:
+    app: postgres
+    component: database
+# Note: Gli endpoints vengono gestiti automaticamente dal service
+# Questo è solo per riferimento/monitoring

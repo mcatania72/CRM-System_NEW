@@ -1,0 +1,149 @@
+# FASE 6: Horizontal Pod Autoscaler per Auto-scaling
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: crm-system
+  labels:
+    app: backend
+    component: autoscaling
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 2
+  maxReplicas: 4  # Limite per DEV_VM con 4 cores
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70  # Scale up al 70% CPU
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80  # Scale up al 80% memory
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 300  # 5 minuti di stabilizzazione
+      policies:
+      - type: Percent
+        value: 100  # Raddoppia le replicas
+        periodSeconds: 60
+      - type: Pods
+        value: 2    # Massimo 2 pods per volta
+        periodSeconds: 60
+      selectPolicy: Min
+    scaleDown:
+      stabilizationWindowSeconds: 900  # 15 minuti prima di scale down
+      policies:
+      - type: Percent
+        value: 50   # Riduci del 50%
+        periodSeconds: 300
+      - type: Pods
+        value: 1    # Massimo 1 pod per volta
+        periodSeconds: 300
+      selectPolicy: Max
+---
+# HPA per frontend (più conservativo)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend-hpa
+  namespace: crm-system
+  labels:
+    app: frontend
+    component: autoscaling
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+  minReplicas: 2
+  maxReplicas: 3  # Frontend nginx scala meno
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 80  # Frontend scala al 80%
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 85
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 600  # 10 minuti
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 300
+    scaleDown:
+      stabilizationWindowSeconds: 1800  # 30 minuti
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 600
+---
+# Vertical Pod Autoscaler per PostgreSQL (futuro)
+# Per ora commentiamo perché VPA richiede setup aggiuntivo
+# 
+# apiVersion: autoscaling.k8s.io/v1
+# kind: VerticalPodAutoscaler
+# metadata:
+#   name: postgres-vpa
+#   namespace: crm-system
+# spec:
+#   targetRef:
+#     apiVersion: apps/v1
+#     kind: Deployment
+#     name: postgres
+#   updatePolicy:
+#     updateMode: "Auto"  # Auto-adjust resources
+#   resourcePolicy:
+#     containerPolicies:
+#     - containerName: postgres
+#       maxAllowed:
+#         memory: 4Gi
+#         cpu: 2000m
+#       minAllowed:
+#         memory: 256Mi
+#         cpu: 100m
+---
+# Pod Disruption Budget per alta disponibilità
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: crm-system
+  labels:
+    app: backend
+    component: availability
+spec:
+  minAvailable: 1  # Almeno 1 replica backend sempre attiva
+  selector:
+    matchLabels:
+      app: backend
+      component: application
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend-pdb
+  namespace: crm-system
+  labels:
+    app: frontend
+    component: availability
+spec:
+  minAvailable: 1  # Almeno 1 replica frontend sempre attiva
+  selector:
+    matchLabels:
+      app: frontend
+      component: web

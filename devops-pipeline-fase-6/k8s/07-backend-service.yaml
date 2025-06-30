@@ -1,0 +1,53 @@
+# FASE 6: Backend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: crm-system
+  labels:
+    app: backend
+    component: application
+    tier: backend
+  annotations:
+    description: "CRM Backend API service"
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb  # Per future AWS
+spec:
+  type: NodePort  # Espone su porta fissa per compatibilità
+  ports:
+  - name: http
+    port: 4001        # Porta interna del service
+    targetPort: 4001  # Porta del container
+    nodePort: 30003   # Porta esterna (evita conflitto con 30001)
+    protocol: TCP
+  selector:
+    app: backend
+    component: application
+  
+  # Load balancing
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600  # 1 ora per sessioni API
+---
+# Service interno per comunicazione tra pods (opzionale ma utile)
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-internal
+  namespace: crm-system
+  labels:
+    app: backend
+    component: application
+    tier: backend
+    type: internal
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 4001
+    targetPort: 4001
+    protocol: TCP
+  selector:
+    app: backend
+    component: application
+  clusterIP: None  # Headless per service discovery

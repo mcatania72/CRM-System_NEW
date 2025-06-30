@@ -1,0 +1,122 @@
+# FASE 6: Profilo configurazione per DEV_VM
+# Ottimizzato per ambiente di sviluppo con risorse abbondanti
+
+# Environment info
+environment: development
+vm_type: dev_vm
+resources:
+  cpu_cores: 4
+  memory_gb: 24
+  storage_gb: 42
+
+# Kubernetes configuration
+kubernetes:
+  cluster_type: k3s
+  storage_class: local-path
+  load_balancer_ip: 192.168.1.29
+
+# Resource allocation (generous per DEV_VM)
+resources_allocation:
+  postgresql:
+    replicas: 1
+    requests:
+      memory: "512Mi"
+      cpu: "200m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+    storage: "10Gi"
+    
+  backend:
+    replicas: 2
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+    
+  frontend:
+    replicas: 2
+    requests:
+      memory: "128Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+# Autoscaling configuration
+autoscaling:
+  backend:
+    min_replicas: 2
+    max_replicas: 4
+    cpu_threshold: 70
+    memory_threshold: 80
+    
+  frontend:
+    min_replicas: 2
+    max_replicas: 3
+    cpu_threshold: 80
+    memory_threshold: 85
+
+# Network configuration
+networking:
+  frontend_nodeport: 30002
+  backend_nodeport: 30003
+  ingress_enabled: true
+  load_balancer_enabled: true
+
+# Database configuration
+database:
+  type: postgresql
+  version: "16-alpine"
+  shared_buffers: "256MB"
+  effective_cache_size: "1GB"
+  max_connections: 100
+  work_mem: "4MB"
+
+# Security settings
+security:
+  network_policies_enabled: true
+  pod_security_policies_enabled: false  # k3s default
+  rbac_enabled: true
+
+# Monitoring and logging
+monitoring:
+  metrics_enabled: true
+  logging_level: "info"
+  health_check_interval: 30
+
+# Development specific settings
+development:
+  debug_mode: true
+  hot_reload: false  # Not applicable for K8s
+  test_data_enabled: true
+  verbose_logging: true
+
+# Performance tuning
+performance:
+  startup_probe_failure_threshold: 30
+  readiness_probe_period: 5
+  liveness_probe_period: 10
+  termination_grace_period: 30
+
+# Backup configuration (FASE 6.5)
+backup:
+  enabled: false  # Will be enabled in FASE 6.5
+  schedule: "0 2 * * *"  # 2 AM daily
+  retention_days: 7
+
+# Notes for DEV_VM deployment
+notes: |
+  This profile is optimized for the DEV_VM environment with:
+  - AMD Ryzen 7 7735HS (4 cores)
+  - 24GB RAM (13.6GB available)
+  - 42GB free storage
+  - k3s cluster with Traefik LoadBalancer
+  
+  Resource allocation uses ~25% of available resources,
+  leaving plenty of headroom for development and testing.
+  
+  Autoscaling is enabled but conservative to prevent
+  resource exhaustion during load testing.

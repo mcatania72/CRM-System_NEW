@@ -1,0 +1,53 @@
+# FASE 6: Frontend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: crm-system
+  labels:
+    app: frontend
+    component: web
+    tier: frontend
+  annotations:
+    description: "CRM Frontend web service"
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb  # Per future AWS
+spec:
+  type: NodePort  # Espone su porta fissa
+  ports:
+  - name: http
+    port: 80          # Porta interna del service
+    targetPort: 80    # Porta del container nginx
+    nodePort: 30002   # Porta esterna (evita conflitto con 30000)
+    protocol: TCP
+  selector:
+    app: frontend
+    component: web
+  
+  # Load balancing per frontend
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 1800  # 30 minuti per sessioni web
+---
+# Service interno per comunicazione tra pods
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-internal
+  namespace: crm-system
+  labels:
+    app: frontend
+    component: web
+    tier: frontend
+    type: internal
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+  selector:
+    app: frontend
+    component: web
+  clusterIP: None  # Headless service
