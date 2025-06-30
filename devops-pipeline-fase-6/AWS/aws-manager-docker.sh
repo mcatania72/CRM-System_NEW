@@ -834,6 +834,10 @@ deploy_application() {
     
     cd "$CRM_DIR"
     
+    # Stop e rimuovi container esistenti per forzare rebuild
+    docker-compose down
+    docker-compose rm -f
+    
     # Verifica configurazione
     docker-compose config > /dev/null
     
@@ -1070,7 +1074,12 @@ main() {
             show_status
             ;;
         "restart")
-            restart_application
+            # Stop e rimuovi tutto per forzare ricreazione
+            cd "$CRM_DIR" 2>/dev/null || { warn "CRM not deployed yet"; exit 1; }
+            docker-compose down
+            docker-compose rm -f
+            docker-compose up -d
+            log "✅ Application restarted with fresh containers"
             ;;
         "stop")
             stop_application
