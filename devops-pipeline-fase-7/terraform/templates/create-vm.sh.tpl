@@ -91,16 +91,20 @@ import_ova_template() {
     log_info "Setting up Ubuntu Cloud template..."
     
     # Create template directory if not exists
-    if [ ! -d "$TEMPLATE_DIR" ]; then
+    if [ ! -d "$TEMPLATE_DIR" ] || [ -z "$(ls -A "$TEMPLATE_DIR" 2>/dev/null)" ]; then
         log_info "Importing OVA template..."
         mkdir -p "$TEMPLATE_DIR"
         
         # Import OVA to template directory
         ovftool --acceptAllEulas --allowExtraConfig \
-            --name="jammy-server-cloudimg-amd64" \
             "$OVA_PATH" "$TEMPLATE_DIR/"
         
-        log_success "OVA template imported"
+        if [ $? -eq 0 ]; then
+            log_success "OVA template imported"
+        else
+            log_error "OVA import failed"
+            return 1
+        fi
     else
         log_info "Template already exists, skipping import"
     fi
@@ -112,18 +116,40 @@ clone_vm_from_template() {
     # Create VM directory
     mkdir -p "$VM_DIR"
     
-    # Clone all files from template
-    cp -r "$TEMPLATE_DIR"/* "$VM_DIR/"
+    # Find the actual template directory (look for any VMX file)
+    TEMPLATE_VMX=$(find "$TEMPLATE_DIR" -name "*.vmx" | head -1)
     
-    # Rename VMX file
-    mv "$VM_DIR/jammy-server-cloudimg-amd64.vmx" "$VMX_FILE"
+    if [ -z "$TEMPLATE_VMX" ]; then
+        log_error "No VMX file found in template directory: $TEMPLATE_DIR"
+        log_info "Template contents:"
+        ls -la "$TEMPLATE_DIR"
+        return 1
+    fi
+    
+    ACTUAL_TEMPLATE_DIR=$(dirname "$TEMPLATE_VMX")
+    log_info "Using template directory: $ACTUAL_TEMPLATE_DIR"
+    
+    # Clone all files from template
+    cp -r "$ACTUAL_TEMPLATE_DIR"/* "$VM_DIR/"
+    
+    # Find and rename VMX file
+    ORIGINAL_VMX=$(find "$VM_DIR" -name "*.vmx" | head -1)
+    if [ -f "$ORIGINAL_VMX" ]; then
+        mv "$ORIGINAL_VMX" "$VMX_FILE"
+        log_info "VMX file renamed: $(basename "$ORIGINAL_VMX") -> $VM_NAME.vmx"
+    else
+        log_error "No VMX file found in cloned directory"
+        return 1
+    fi
     
     # Rename VMDK files to match VM name
     for vmdk in "$VM_DIR"/*.vmdk; do
         if [ -f "$vmdk" ]; then
             base_name=$(basename "$vmdk")
-            new_name=$(echo "$base_name" | sed "s/jammy-server-cloudimg-amd64/$VM_NAME/g")
+            new_name="$VM_NAME.vmdk"
             mv "$vmdk" "$VM_DIR/$new_name"
+            log_info "VMDK file renamed: $base_name -> $new_name"
+            break  # Usually only one VMDK
         fi
     done
     
