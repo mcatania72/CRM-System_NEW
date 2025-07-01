@@ -14,6 +14,19 @@ log() {
 
 log "🚀 Deploying REAL CRM with TypeScript build..."
 
+# Installa Node.js e npm se non presenti
+log "💻 Installing Node.js and npm..."
+if ! command -v node &> /dev/null; then
+    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+fi
+
+# Verifica installazione
+node --version
+npm --version
+
+log "✅ Node.js and npm ready"
+
 # Stop container
 log "🛑 Stopping containers..."
 cd "$CRM_DIR"
