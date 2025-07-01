@@ -37,7 +37,7 @@ docker-compose down
 
 # Backup fake app
 log "🗑️ Removing fake applications..."
-rm -rf backend frontend
+sudo rm -rf backend frontend
 
 # Copia VERA applicazione
 log "📂 Copying REAL frontend application..."
