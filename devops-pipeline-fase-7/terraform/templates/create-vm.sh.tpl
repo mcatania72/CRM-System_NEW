@@ -64,8 +64,8 @@ check_prerequisites() {
     # Check ISO file
     if [ ! -f "$ISO_PATH" ]; then
         log_error "Ubuntu ISO not found: $ISO_PATH"
-        log_info "Download Ubuntu 22.04 Desktop ISO from:"
-        log_info "https://ubuntu.com/download/desktop"
+        log_info "Download Ubuntu 22.04 Server ISO from:"
+        log_info "https://ubuntu.com/download/server"
         exit 1
     fi
     
@@ -174,10 +174,10 @@ EOF
 }
 
 create_virtual_disk() {
-    log_info "Creating virtual disk (${DISK_SIZE_MB}MB)..."
+    log_info "Creating virtual disk ($${disk_size_mb}MB)..."
     
     # Create the virtual disk using vmware-vdiskmanager
-    vmware-vdiskmanager -c -s ${DISK_SIZE_MB}MB -a lsilogic -t 0 "$VMDK_FILE"
+    vmware-vdiskmanager -c -s $${disk_size_mb}MB -a lsilogic -t 0 "$VMDK_FILE"
     
     log_success "Virtual disk created"
 }
@@ -253,7 +253,7 @@ show_vm_info() {
     echo "   IP Address: $IP_ADDRESS"
     echo "   Memory: $${MEMORY_MB}MB ($((MEMORY_MB / 1024))GB)"
     echo "   CPU Cores: $NUM_CPUS"
-    echo "   Disk: $${DISK_SIZE_MB}MB ($((DISK_SIZE_MB / 1024))GB)"
+    echo "   Disk: $${disk_size_mb}MB ($((disk_size_mb / 1024))GB)"
     echo ""
     echo -e "$${BLUE}🔌 Access Info:$${NC}"
     echo "   SSH: ssh devops@$IP_ADDRESS"
