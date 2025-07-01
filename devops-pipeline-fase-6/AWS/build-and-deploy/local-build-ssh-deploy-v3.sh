@@ -256,7 +256,30 @@ services:
       dockerfile_inline: |
         FROM nginx:alpine
         COPY dist/ /usr/share/nginx/html/
-        COPY nginx.conf /etc/nginx/nginx.conf 2>/dev/null || true
+        # Crea nginx.conf se non esiste
+        RUN echo 'events { worker_connections 1024; }' > /etc/nginx/nginx.conf && \
+            echo 'http {' >> /etc/nginx/nginx.conf && \
+            echo '  include /etc/nginx/mime.types;' >> /etc/nginx/nginx.conf && \
+            echo '  default_type application/octet-stream;' >> /etc/nginx/nginx.conf && \
+            echo '  server {' >> /etc/nginx/nginx.conf && \
+            echo '    listen 80;' >> /etc/nginx/nginx.conf && \
+            echo '    server_name localhost;' >> /etc/nginx/nginx.conf && \
+            echo '    location / {' >> /etc/nginx/nginx.conf && \
+            echo '      root /usr/share/nginx/html;' >> /etc/nginx/nginx.conf && \
+            echo '      index index.html;' >> /etc/nginx/nginx.conf && \
+            echo '      try_files $uri $uri/ /index.html;' >> /etc/nginx/nginx.conf && \
+            echo '    }' >> /etc/nginx/nginx.conf && \
+            echo '    location /api {' >> /etc/nginx/nginx.conf && \
+            echo '      proxy_pass http://backend:4001;' >> /etc/nginx/nginx.conf && \
+            echo '      proxy_set_header Host $host;' >> /etc/nginx/nginx.conf && \
+            echo '      proxy_set_header X-Real-IP $remote_addr;' >> /etc/nginx/nginx.conf && \
+            echo '      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;' >> /etc/nginx/nginx.conf && \
+            echo '      proxy_set_header X-Forwarded-Proto $scheme;' >> /etc/nginx/nginx.conf && \
+            echo '    }' >> /etc/nginx/nginx.conf && \
+            echo '  }' >> /etc/nginx/nginx.conf && \
+            echo '}' >> /etc/nginx/nginx.conf
+        # Copia nginx.conf custom se esiste
+        COPY nginx.con[f] /etc/nginx/nginx.conf || true
         EXPOSE 80
         CMD ["nginx", "-g", "daemon off;"]
     ports:

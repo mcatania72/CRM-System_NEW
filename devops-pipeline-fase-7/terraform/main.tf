@@ -234,6 +234,10 @@ resource "null_resource" "create_vms" {
     local_file.vm_creation_script
   ]
   
+  triggers = {
+    vm_name = each.value.name
+  }
+  
   provisioner "local-exec" {
     command     = "./create-vm-${each.key}.sh"
     working_dir = path.module
@@ -241,7 +245,7 @@ resource "null_resource" "create_vms" {
   
   provisioner "local-exec" {
     when        = destroy
-    command     = "vmrun stop '~/VMware_VMs/${each.value.name}/${each.value.name}.vmx' 2>/dev/null || true; vmrun deleteVM '~/VMware_VMs/${each.value.name}/${each.value.name}.vmx' 2>/dev/null || true"
+    command     = "vmrun stop '~/VMware_VMs/${self.triggers.vm_name}/${self.triggers.vm_name}.vmx' 2>/dev/null || true; vmrun deleteVM '~/VMware_VMs/${self.triggers.vm_name}/${self.triggers.vm_name}.vmx' 2>/dev/null || true"
     working_dir = path.module
     on_failure  = continue
   }
@@ -404,8 +408,8 @@ output "cluster_info" {
 output "access_info" {
   description = "Access information for the infrastructure"
   value = {
-    ssh_command = "ssh ${var.vm_credentials.username}@<VM_IP>"
-    kubectl_config = "scp ${var.vm_credentials.username}@192.168.1.101:~/.kube/config ~/.kube/config-crm-cluster"
+    ssh_command = "ssh devops@<VM_IP>"
+    kubectl_config = "scp devops@192.168.1.101:~/.kube/config ~/.kube/config-crm-cluster"
     dashboard_url = "https://192.168.1.101:6443"
   }
   sensitive = true
