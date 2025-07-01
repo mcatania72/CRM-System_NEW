@@ -174,11 +174,10 @@ EOF
 }
 
 create_virtual_disk() {
-    log_info "Creating virtual disk ($${DISK_SIZE_MB}MB)..."
+    log_info "Creating virtual disk (${DISK_SIZE_MB}MB)..."
     
-    vmrun -T ws createVM "$VMX_FILE" \
-        -diskSizeMB $DISK_SIZE_MB \
-        -diskType 0
+    # Create the virtual disk using vmware-vdiskmanager
+    vmware-vdiskmanager -c -s ${DISK_SIZE_MB}MB -a lsilogic -t 0 "$VMDK_FILE"
     
     log_success "Virtual disk created"
 }
