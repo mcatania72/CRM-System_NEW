@@ -146,16 +146,18 @@ resource "local_file" "vm_creation_script" {
   
   filename = "${path.module}/create-vm-${each.key}.sh"
   content = templatefile("${path.module}/templates/create-vm.sh.tpl", {
-    vm_name          = each.value.name
-    vm_description   = each.value.description
-    memory_mb        = local.vm_common.memory_mb
-    num_cpus         = local.vm_common.num_cpus
-    disk_size_mb     = local.vm_common.disk_size
-    iso_path         = var.ubuntu_iso_path
-    ip_address       = each.value.ip_address
-    vm_role          = each.value.role
-    cloud_init_file  = "cloud-init-${each.key}.yml"
-    network_config   = "network-config-${each.key}.yml"
+    vm_name                  = each.value.name
+    vm_description           = each.value.description
+    memory_mb                = local.vm_common.memory_mb
+    num_cpus                 = local.vm_common.num_cpus
+    disk_size_mb             = local.vm_common.disk_size
+    ip_address               = each.value.ip_address
+    vm_role                  = each.value.role
+    vm_credentials_username  = var.vm_credentials.username
+    gateway                  = var.vm_network.gateway
+    dns_servers              = var.vm_network.dns
+    cloud_init_file          = "cloud-init-${each.key}.yml"
+    network_config           = "network-config-${each.key}.yml"
   })
   
   provisioner "local-exec" {
