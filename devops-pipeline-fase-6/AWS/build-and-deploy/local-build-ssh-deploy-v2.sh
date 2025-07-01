@@ -348,9 +348,14 @@ EOF
 
     chmod +x deploy-aws.sh
     
-    # Crea archivio
-    tar -czf crm-deployment.tar.gz .
+    # Crea archivio FUORI dalla directory corrente per evitare inclusione ricorsiva
+    PARENT_DIR="$(dirname "$BUILD_DIR")"
+    BUILD_NAME="$(basename "$BUILD_DIR")"
     
+    cd "$PARENT_DIR"
+    tar -czf "$BUILD_DIR/crm-deployment.tar.gz" -C "$BUILD_NAME" .
+    
+    cd "$BUILD_DIR"
     log_success "Package deployment creato: $BUILD_DIR/crm-deployment.tar.gz"
     log_info "Dimensione: $(du -h crm-deployment.tar.gz | cut -f1)"
 }
