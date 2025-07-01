@@ -41,15 +41,19 @@ log "📂 Copying source applications..."
 cp -r "$SOURCE_DIR/frontend" "$CRM_DIR/"
 cp -r "$SOURCE_DIR/backend" "$CRM_DIR/"
 
-# BUILD BACKEND TypeScript
-log "🔨 Building backend TypeScript..."
+# BUILD BACKEND TypeScript in Docker container
+log "🔨 Building backend TypeScript in Docker..."
 cd "$CRM_DIR/backend"
 
-# Install dependencies
-npm install
-
-# Build TypeScript
-npm run build
+# Build usando container Docker con più memoria
+docker run --rm \
+    -v $(pwd):/app \
+    -w /app \
+    --memory=800m \
+    node:18-alpine sh -c "
+        npm install --production=false
+        npm run build
+    "
 
 # Verifica build
 if [ ! -f "dist/app.js" ]; then
@@ -57,17 +61,21 @@ if [ ! -f "dist/app.js" ]; then
     exit 1
 fi
 
-log "✅ Backend built successfully"
+log "✅ Backend built successfully in Docker"
 
-# BUILD FRONTEND React
-log "🔨 Building frontend React..."
+# BUILD FRONTEND React in Docker container
+log "🔨 Building frontend React in Docker..."
 cd "$CRM_DIR/frontend"
 
-# Install dependencies  
-npm install
-
-# Build React app
-npm run build
+# Build usando container Docker con più memoria
+docker run --rm \
+    -v $(pwd):/app \
+    -w /app \
+    --memory=800m \
+    node:18-alpine sh -c "
+        npm install --production=false
+        npm run build
+    "
 
 # Verifica build
 if [ ! -d "dist" ]; then
@@ -75,7 +83,7 @@ if [ ! -d "dist" ]; then
     exit 1
 fi
 
-log "✅ Frontend built successfully"
+log "✅ Frontend built successfully in Docker"
 
 # Crea nuovo docker-compose.yml per app compilate
 log "📝 Creating docker-compose.yml for built applications..."
