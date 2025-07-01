@@ -1,7 +1,5 @@
 # =============================================================================
-# TERRAFORM MAIN CONFIGURATION - FASE 7
-# =============================================================================
-# Configurazione principale per creazione 3 VM VMware con Kubernetes cluster
+# TERRAFORM MAIN CONFIGURATION - FASE 7 (FIXED)
 # =============================================================================
 
 terraform {
@@ -81,7 +79,6 @@ variable "vm_credentials" {
 # =============================================================================
 
 locals {
-  # VM configuration map
   vms = {
     "FE" = {
       name        = "${var.vm_base_name}_FE_VM"
@@ -106,17 +103,10 @@ locals {
     }
   }
   
-  # Network configuration
-  network_config = {
-    bridge_name = "vmnet1"
-    vnet_subnet = var.vm_network.subnet
-  }
-  
-  # Common VM settings
   vm_common = {
     memory_mb = var.vm_specs.memory_gb * 1024
     num_cpus  = var.vm_specs.cpu_cores
-    disk_size = var.vm_specs.disk_gb * 1024  # In MB
+    disk_size = var.vm_specs.disk_gb * 1024
   }
 }
 
@@ -124,7 +114,6 @@ locals {
 # VM CREATION SCRIPTS
 # =============================================================================
 
-# Cloud-init user data template
 resource "local_file" "cloud_init_user_data" {
   for_each = local.vms
   
@@ -141,7 +130,6 @@ resource "local_file" "cloud_init_user_data" {
   })
 }
 
-# Network configuration template
 resource "local_file" "network_config" {
   for_each = local.vms
   
@@ -153,7 +141,6 @@ resource "local_file" "network_config" {
   })
 }
 
-# VMware VM creation script
 resource "local_file" "vm_creation_script" {
   for_each = local.vms
   
@@ -171,13 +158,11 @@ resource "local_file" "vm_creation_script" {
     network_config   = "network-config-${each.key}.yml"
   })
   
-  # Make script executable
   provisioner "local-exec" {
     command = "chmod +x ${self.filename}"
   }
 }
 
-# Kubernetes setup script
 resource "local_file" "k8s_setup_script" {
   for_each = local.vms
   
@@ -189,17 +174,15 @@ resource "local_file" "k8s_setup_script" {
     is_master  = each.value.role == "master"
   })
   
-  # Make script executable
   provisioner "local-exec" {
     command = "chmod +x ${self.filename}"
   }
 }
 
 # =============================================================================
-# VM DEPLOYMENT EXECUTION
+# VM DEPLOYMENT EXECUTION (FIXED)
 # =============================================================================
 
-# Execute VM creation scripts
 resource "null_resource" "create_vms" {
   for_each = local.vms
   
@@ -209,28 +192,30 @@ resource "null_resource" "create_vms" {
     local_file.network_config
   ]
   
-  # Create VM using vmrun
   provisioner "local-exec" {
     command     = "./create-vm-${each.key}.sh"
     working_dir = path.module
   }
   
-  # Cleanup script on destroy
+  # FIXED: Use self reference for destroy
   provisioner "local-exec" {
     when        = destroy
-    command     = "vmrun stop '${each.value.name}/${each.value.name}.vmx' && vmrun deleteVM '${each.value.name}/${each.value.name}.vmx'"
+    command     = "vmrun stop '${self.triggers.vm_path}' 2>/dev/null || true; vmrun deleteVM '${self.triggers.vm_path}' 2>/dev/null || true"
     working_dir = path.module
     on_failure  = continue
   }
+  
+  # Store VM path for destroy
+  triggers = {
+    vm_path = "${each.value.name}/${each.value.name}.vmx"
+  }
 }
 
-# Wait for VMs to be ready
 resource "null_resource" "wait_for_vms" {
   for_each = local.vms
   
   depends_on = [null_resource.create_vms]
   
-  # Wait for SSH to be available
   provisioner "local-exec" {
     command = <<-EOT
       echo "Waiting for VM ${each.value.name} to be ready..."
@@ -243,7 +228,6 @@ resource "null_resource" "wait_for_vms" {
         sleep 10
       done
       
-      # Wait for SSH
       for i in {1..30}; do
         if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${var.vm_credentials.username}@${each.value.ip_address} 'echo "SSH ready"' >/dev/null 2>&1; then
           echo "SSH ready on ${each.value.name}"
@@ -256,28 +240,20 @@ resource "null_resource" "wait_for_vms" {
   }
 }
 
-# =============================================================================
-# KUBERNETES CLUSTER SETUP
-# =============================================================================
-
-# Setup Kubernetes on all VMs
 resource "null_resource" "setup_kubernetes" {
   for_each = local.vms
   
   depends_on = [null_resource.wait_for_vms]
   
-  # Execute Kubernetes setup
   provisioner "local-exec" {
     command     = "./setup-k8s-${each.key}.sh"
     working_dir = path.module
   }
 }
 
-# Initialize master node and get join token
 resource "null_resource" "k8s_master_init" {
   depends_on = [null_resource.setup_kubernetes]
   
-  # Initialize master on FE VM
   provisioner "local-exec" {
     command = <<-EOT
       echo "Initializing Kubernetes master..."
@@ -287,26 +263,20 @@ resource "null_resource" "k8s_master_init" {
         sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
         sudo chown $(id -u):$(id -g) $HOME/.kube/config
         
-        # Install Flannel CNI
         kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
-        
-        # Generate join token and save
         kubeadm token create --print-join-command > /tmp/k8s-join-command
       '
       
-      # Copy join command to local
       scp -o StrictHostKeyChecking=no ${var.vm_credentials.username}@192.168.1.101:/tmp/k8s-join-command ./k8s-join-command
     EOT
   }
 }
 
-# Join worker nodes to cluster
 resource "null_resource" "k8s_workers_join" {
   for_each = { for k, v in local.vms : k => v if v.role == "worker" }
   
   depends_on = [null_resource.k8s_master_init]
   
-  # Join workers to cluster
   provisioner "local-exec" {
     command = <<-EOT
       echo "Joining worker ${each.value.name} to cluster..."
