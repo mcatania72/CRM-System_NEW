@@ -58,7 +58,7 @@ variable "vm_specs" {
 variable "ubuntu_iso_path" {
   description = "Path to Ubuntu 22.04 ISO file"
   type        = string
-  default     = "/home/devops/Downloads/ubuntu-22.04.3-desktop-amd64.iso"
+  default     = "/home/devops/images/ubuntu-22.04.3-live-server-amd64.iso"
 }
 
 variable "vm_credentials" {
@@ -322,7 +322,7 @@ output "access_info" {
     kubectl_config = "scp ${var.vm_credentials.username}@192.168.1.101:~/.kube/config ~/.kube/config-crm-cluster"
     dashboard_url = "https://192.168.1.101:6443"
   }
-  sensitive = false
+  sensitive = true
 }
 
 output "next_steps" {
