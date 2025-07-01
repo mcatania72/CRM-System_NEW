@@ -13,9 +13,9 @@ set -e
 # VM Configuration
 VM_NAME="${vm_name}"
 VM_DESCRIPTION="${vm_description}"
-MEMORY_MB=${memory_mb}
-NUM_CPUS=${num_cpus}
-DISK_SIZE_MB=${disk_size_mb}
+MEMORY_MB="${memory_mb}"
+NUM_CPUS="${num_cpus}"
+DISK_SIZE_MB="${disk_size_mb}"
 ISO_PATH="${iso_path}"
 IP_ADDRESS="${ip_address}"
 VM_ROLE="${vm_role}"
@@ -69,20 +69,14 @@ check_prerequisites() {
         exit 1
     fi
     
-    # Check if VM already exists
+    # Check if VM already exists and remove automatically
     if [ -d "$VM_DIR" ]; then
         log_warning "VM directory already exists: $VM_DIR"
-        read -p "Remove existing VM? (y/N): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            log_info "Removing existing VM..."
-            vmrun stop "$VMX_FILE" 2>/dev/null || true
-            vmrun deleteVM "$VMX_FILE" 2>/dev/null || true
-            rm -rf "$VM_DIR"
-        else
-            log_info "Skipping VM creation"
-            exit 0
-        fi
+        log_info "Removing existing VM automatically..."
+        vmrun stop "$VMX_FILE" 2>/dev/null || true
+        vmrun deleteVM "$VMX_FILE" 2>/dev/null || true
+        rm -rf "$VM_DIR"
+        log_success "Existing VM removed"
     fi
     
     log_success "Prerequisites OK"
@@ -174,10 +168,45 @@ EOF
 }
 
 create_virtual_disk() {
-    log_info "Creating virtual disk ($${disk_size_mb}MB)..."
+    log_info "Creating virtual disk ($DISK_SIZE_MB MB)..."
     
-    # Create the virtual disk using vmware-vdiskmanager
-    vmware-vdiskmanager -c -s $${disk_size_mb}MB -a lsilogic -t 0 "$VMDK_FILE"
+    # Debug info
+    log_info "Debug: DISK_SIZE_MB = '$DISK_SIZE_MB'"
+    
+    # Try multiple approaches for disk creation
+    if command -v vmware-vdiskmanager &> /dev/null; then
+        log_info "Using vmware-vdiskmanager..."
+        vmware-vdiskmanager -c -s "$${DISK_SIZE_MB}MB" -a lsilogic -t 0 "$VMDK_FILE"
+    elif command -v qemu-img &> /dev/null; then
+        log_info "Using qemu-img as fallback..."
+        qemu-img create -f vmdk "$VMDK_FILE" "$${DISK_SIZE_MB}M"
+    else
+        # Manual VMDK creation - basic approach
+        log_info "Creating VMDK manually..."
+        cat > "$VMDK_FILE" << EOF
+# Disk DescriptorFile
+version=1
+encoding="UTF-8"
+CID=fffffffe
+parentCID=ffffffff
+isNativeSnapshot="no"
+createType="monolithicSparse"
+
+# Extent description
+RW $((DISK_SIZE_MB * 2048)) SPARSE "$VM_NAME.vmdk"
+
+# The Disk Data Base
+#DDB
+
+ddb.virtualHWVersion = "19"
+ddb.longContentID = "$(openssl rand -hex 16)"
+ddb.uuid = "$(uuidgen | tr '[:upper:]' '[:lower:]')"
+ddb.geometry.cylinders = "$((DISK_SIZE_MB / 16))"
+ddb.geometry.heads = "16"
+ddb.geometry.sectors = "63"
+ddb.adapterType = "lsilogic"
+EOF
+    fi
     
     log_success "Virtual disk created"
 }
@@ -190,8 +219,8 @@ setup_unattended_install() {
     mkdir -p "$CLOUD_INIT_DIR"
     
     # Copy cloud-init files
-    cp "${cloud_init_file}" "$CLOUD_INIT_DIR/user-data"
-    cp "${network_config}" "$CLOUD_INIT_DIR/network-config"
+    cp "${cloud_init_file}" "$CLOUD_INIT_DIR/user-data" 2>/dev/null || log_warning "Cloud-init file not found"
+    cp "${network_config}" "$CLOUD_INIT_DIR/network-config" 2>/dev/null || log_warning "Network config file not found"
     
     # Create meta-data
     cat > "$CLOUD_INIT_DIR/meta-data" << EOF
@@ -253,7 +282,7 @@ show_vm_info() {
     echo "   IP Address: $IP_ADDRESS"
     echo "   Memory: $${MEMORY_MB}MB ($((MEMORY_MB / 1024))GB)"
     echo "   CPU Cores: $NUM_CPUS"
-    echo "   Disk: $${disk_size_mb}MB ($((disk_size_mb / 1024))GB)"
+    echo "   Disk: $${DISK_SIZE_MB}MB ($((DISK_SIZE_MB / 1024))GB)"
     echo ""
     echo -e "$${BLUE}🔌 Access Info:$${NC}"
     echo "   SSH: ssh devops@$IP_ADDRESS"
@@ -272,6 +301,16 @@ show_vm_info() {
 main() {
     echo ""
     log_info "🚀 Creating VMware VM: $VM_NAME"
+    echo ""
+    
+    # Debug info
+    echo "Debug info:"
+    echo "  VM_NAME: $VM_NAME"
+    echo "  MEMORY_MB: $MEMORY_MB"
+    echo "  NUM_CPUS: $NUM_CPUS"
+    echo "  DISK_SIZE_MB: $DISK_SIZE_MB"
+    echo "  ISO_PATH: $ISO_PATH"
+    echo "  IP_ADDRESS: $IP_ADDRESS"
     echo ""
     
     # Step 1: Prerequisites
