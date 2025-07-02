@@ -101,20 +101,31 @@ create_vm_directory() {
 }
 
 create_virtual_disk() {
-    log_info "Creating virtual disk ($${disk_size_mb}MB)..."
+    log_info "Creating virtual disk (${disk_size_mb}MB)..."
     
-    # Create VMDK disk file manually
-    cat > "$VMDK_FILE" << EOF
+    # Use vmware-vdiskmanager to create proper VMDK
+    if command -v vmware-vdiskmanager &> /dev/null; then
+        log_info "Using vmware-vdiskmanager..."
+        vmware-vdiskmanager -c -s ${disk_size_mb}MB -a lsilogic -t 0 "$VMDK_FILE"
+    else
+        log_info "vmware-vdiskmanager not found, using vmkfstools alternative..."
+        
+        # Create VMDK using basic sparse format
+        # First create the data file
+        dd if=/dev/zero of="$VM_DIR/$VM_NAME-flat.vmdk" bs=1M count=0 seek=$((DISK_SIZE_MB)) 2>/dev/null
+        
+        # Create proper descriptor
+        cat > "$VMDK_FILE" << EOF
 # Disk DescriptorFile
 version=1
 encoding="UTF-8"
 CID=fffffffe
 parentCID=ffffffff
 isNativeSnapshot="no"
-createType="monolithicSparse"
+createType="vmfs"
 
-# Extent description  
-RW $((DISK_SIZE_MB * 2048)) SPARSE "$VM_NAME.vmdk"
+# Extent description
+RW $((DISK_SIZE_MB * 2048)) VMFS "$VM_NAME-flat.vmdk"
 
 # The Disk Data Base
 #DDB
@@ -127,6 +138,7 @@ ddb.geometry.heads = "16"
 ddb.geometry.sectors = "63"
 ddb.adapterType = "lsilogic"
 EOF
+    fi
     
     log_success "Virtual disk created"
 }
