@@ -211,7 +211,7 @@ resource "local_file" "vm_creation_script" {
     memory_mb        = local.vm_common.memory_mb
     num_cpus         = local.vm_common.num_cpus
     disk_size_mb     = local.vm_common.disk_size
-    autoinstall_iso  = "./${each.value.name}-autoinstall.iso"
+    autoinstall_iso  = "${path.module}/${each.value.name}-autoinstall.iso"
     ip_address       = each.value.ip_address
     vm_role          = each.value.role
     username         = var.vm_credentials.username
