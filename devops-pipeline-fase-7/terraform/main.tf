@@ -180,7 +180,7 @@ resource "null_resource" "create_autoinstall_iso" {
       echo "Creating ISO: $OUTPUT_ISO"
       
       genisoimage -r -V "${each.value.name} Autoinstall" \
-        -cache-inodes -J -l \
+        -cache-inodes -J -joliet-long -l \
         -b boot/grub/i386-pc/eltorito.img \
         -c boot.catalog -no-emul-boot \
         -boot-load-size 4 -boot-info-table \

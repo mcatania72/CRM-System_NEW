@@ -66,7 +66,7 @@ for KEY in "${!VMS[@]}"; do
     echo "Creating ISO: $OUTPUT_ISO"
     
     if genisoimage -r -V "${VM_NAME} Autoinstall" \
-        -cache-inodes -J -l \
+        -cache-inodes -J -joliet-long -l \
         -b boot/grub/i386-pc/eltorito.img \
         -c boot.catalog -no-emul-boot \
         -boot-load-size 4 -boot-info-table \
