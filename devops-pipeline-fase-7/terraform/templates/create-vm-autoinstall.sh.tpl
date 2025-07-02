@@ -187,7 +187,7 @@ sound.autodetect = "TRUE"
 
 # CD/DVD Configuration - Autoinstall ISO
 ide1:0.present = "TRUE"
-ide1:0.fileName = "$AUTOINSTALL_ISO"
+ide1:0.fileName = "$(realpath $AUTOINSTALL_ISO)"
 ide1:0.deviceType = "cdrom-image"
 
 # Boot Configuration
