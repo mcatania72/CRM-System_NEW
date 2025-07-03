@@ -239,7 +239,7 @@ start_vm() {
 #!/bin/bash
 VM_NAME="$1"
 IP="$2"
-while ! ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no devops@"$IP" 'echo OK' >/dev/null 2>&1; do
+while ! timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o PasswordAuthentication=no devops@"$IP" 'echo OK' >/dev/null 2>&1; do
     sleep 30
 done
 echo "$(date): $VM_NAME ready at $IP" >> /tmp/vm-ready.log
@@ -263,7 +263,7 @@ wait_for_installation() {
             log_info "VM is responding to ping - checking SSH..."
             
             # Try SSH connection
-            if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+            if timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o PasswordAuthentication=no \
                $USERNAME@"$IP_ADDRESS" 'echo "SSH ready"' >/dev/null 2>&1; then
                 log_success "Ubuntu autoinstall completed successfully!"
                 log_success "VM is ready and accessible via SSH"
@@ -301,7 +301,7 @@ verify_installation() {
     log_info "Verifying installation completion..."
     
     # Test SSH connection and check autoinstall marker
-    if ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no \
+    if timeout 15 ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o PasswordAuthentication=no \
        $USERNAME@"$IP_ADDRESS" 'ls /home/'$USERNAME'/autoinstall-complete' >/dev/null 2>&1; then
         log_success "Autoinstall completion marker found"
     else
@@ -309,7 +309,7 @@ verify_installation() {
     fi
     
     # Check Docker installation
-    if ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no \
+    if timeout 15 ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o PasswordAuthentication=no \
        $USERNAME@"$IP_ADDRESS" 'docker --version' >/dev/null 2>&1; then
         log_success "Docker installation verified"
     else
@@ -317,7 +317,7 @@ verify_installation() {
     fi
     
     # Check system info
-    SYSTEM_INFO=$(ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no \
+    SYSTEM_INFO=$(timeout 15 ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o PasswordAuthentication=no \
                   $USERNAME@"$IP_ADDRESS" 'uname -a && whoami' 2>/dev/null || echo "SSH connection failed")
     log_info "System info: $SYSTEM_INFO"
 }
