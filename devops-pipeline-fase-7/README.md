@@ -1,138 +1,212 @@
-# FASE 7: Infrastructure as Code (Terraform + VMware)
+# 🚀 FASE 7 - Creazione VM con Terraform e Ubuntu Autoinstall
 
-## 🎯 Obiettivo
-Automatizzare la creazione di infrastruttura con **Terraform** per deploy applicazione CRM su cluster Kubernetes distribuito su 3 VM VMware.
+## 📋 Panoramica
+Questa fase automatizza la creazione di 3 VM VMware con Ubuntu 22.04 usando Terraform e autoinstall.
 
-## 🏗️ Architettura Target
+### VM Create:
+- **SPESE_FE_VM** (192.168.1.101) - Frontend/Master Kubernetes
+- **SPESE_BE_VM** (192.168.1.102) - Backend/Worker Kubernetes  
+- **SPESE_DB_VM** (192.168.1.103) - Database/Worker Kubernetes
 
-### **Infrastructure Layout**
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     DEV_VM (Host)                          │
-│                   Ubuntu + VMware                          │
-│  ┌─────────────────────────────────────────────────────────┤
-│  │               VMware Infrastructure                     │
-│  │                                                        │
-│  │  ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
-│  │  │   SPESE_FE_VM    │ │   SPESE_BE_VM    │ │   SPESE_DB_VM    │
-│  │  │  192.168.1.101   │ │  192.168.1.102   │ │  192.168.1.103   │
-│  │  │                  │ │                  │ │                  │
-│  │  │ K8s Master Node  │ │ K8s Worker Node  │ │ K8s Worker Node  │
-│  │  │ + Frontend Pods  │ │ + Backend Pods   │ │ + Database Pods  │
-│  │  │ + Ingress Ctrl   │ │ + App Services   │ │ + Storage        │
-│  │  │                  │ │                  │ │ + Backup         │
-│  │  │ 4GB RAM, 2 CPU   │ │ 4GB RAM, 2 CPU   │ │ 4GB RAM, 2 CPU   │
-│  │  │ 25GB Disk        │ │ 25GB Disk        │ │ 25GB Disk        │
-│  │  └──────────────────┘ └──────────────────┘ └──────────────────┘
-│  └─────────────────────────────────────────────────────────┤
-└─────────────────────────────────────────────────────────────┘
-```
+## 🛠️ Prerequisiti
 
-### **Network Configuration**
-- **Network Segment:** 192.168.1.0/24
-- **Gateway:** 192.168.1.1
-- **DNS:** 8.8.8.8, 8.8.4.4
-- **Inter-VM Communication:** Full mesh connectivity
+### Software richiesto:
+- VMware Workstation Pro
+- Terraform >= 1.0
+- Ubuntu 22.04 Server ISO in `/home/devops/images/`
+- Strumenti: `genisoimage`, `p7zip-full`, `vmware-vdiskmanager`
 
-### **Kubernetes Cluster**
-- **Cluster Name:** crm-production
-- **CNI:** Flannel or Calico
-- **Load Balancer:** MetalLB + Nginx Ingress
-- **Storage:** Distributed storage across nodes
+### Risorse minime:
+- RAM: 12GB disponibili (4GB per VM)
+- Disco: 80GB liberi
+- CPU: 6+ cores
 
-## 🛠️ Componenti
+## 🚀 Deploy Completo
 
-### **Infrastructure Scripts**
-1. **sync-devops-config.sh** - Sincronizzazione repository
-2. **prerequisites.sh** - Verifica e installazione dipendenze
-3. **deploy_infrastructure.sh** - Creazione VM con Terraform
-4. **test_infrastructure.sh** - Test infrastruttura deployata
+```bash
+# 1. Posizionamento
+cd ~/CRM-Fase7/devops-pipeline-fase-7/terraform
 
-### **Application Scripts** (Fase 7.5)
-5. **deploy_application.sh** - Deploy CRM su cluster K8s
-6. **test_application.sh** - Test applicazione deployata
+# 2. Inizializzazione Terraform
+terraform init
 
-## 📋 Resource Allocation
-
-### **Per VM (Total: 12GB RAM, 6 CPU, 75GB Storage)**
-```yaml
-vm_specs:
-  cpu: 2 cores
-  memory: 4GB RAM
-  disk: 25GB (dynamic allocation)
-  os: Ubuntu 22.04 LTS
-  network: Bridged (192.168.1.x)
+# 3. Deploy automatico (tempo: ~37 minuti)
+terraform apply -auto-approve
 ```
 
-### **Kubernetes Resource Distribution**
-```yaml
-# SPESE_FE_VM (Master + Frontend)
-frontend:
-  replicas: 2
-  resources:
-    requests: { memory: "256Mi", cpu: "100m" }
-    limits: { memory: "512Mi", cpu: "500m" }
+### Fasi del deploy:
+1. **0-3 min**: Creazione ISO autoinstall personalizzati
+2. **3-6 min**: Creazione VM e avvio
+3. **6-36 min**: Installazione Ubuntu automatica
+4. **36-37 min**: Cleanup ISO e finalizzazione
 
-# SPESE_BE_VM (Worker + Backend)  
-backend:
-  replicas: 2
-  resources:
-    requests: { memory: "512Mi", cpu: "200m" }
-    limits: { memory: "1Gi", cpu: "1000m" }
+## 🔧 Gestione VM
 
-# SPESE_DB_VM (Worker + Database)
-postgres:
-  replicas: 1
-  resources:
-    requests: { memory: "1Gi", cpu: "250m" }
-    limits: { memory: "2Gi", cpu: "1000m" }
+### Verifica stato:
+```bash
+# Lista VM attive
+vmrun list
+
+# Verifica connettività
+ping 192.168.1.101  # FE
+ping 192.168.1.102  # BE
+ping 192.168.1.103  # DB
+
+# Test SSH (password: devops)
+ssh devops@192.168.1.101
+ssh devops@192.168.1.102
+ssh devops@192.168.1.103
 ```
 
-## 🎯 Vantaggi Architettura
+### Stop tutte le VM:
+```bash
+# Stop ordinato
+vmrun stop ~/VMware_VMs/SPESE_FE_VM/SPESE_FE_VM.vmx soft
+vmrun stop ~/VMware_VMs/SPESE_BE_VM/SPESE_BE_VM.vmx soft
+vmrun stop ~/VMware_VMs/SPESE_DB_VM/SPESE_DB_VM.vmx soft
 
-### **High Availability**
-- ✅ Frontend accessible anche se backend down
-- ✅ Database isolation e protezione
-- ✅ Load balancing automatico
+# Oppure stop forzato
+vmrun stop ~/VMware_VMs/SPESE_FE_VM/SPESE_FE_VM.vmx hard
+vmrun stop ~/VMware_VMs/SPESE_BE_VM/SPESE_BE_VM.vmx hard
+vmrun stop ~/VMware_VMs/SPESE_DB_VM/SPESE_DB_VM.vmx hard
+```
 
-### **Scalabilità**
-- ✅ Scale orizzontale per componente
-- ✅ Resource allocation dedicated
-- ✅ Easy upgrade individual nodes
+### Start tutte le VM:
+```bash
+# Avvio VM
+vmrun start ~/VMware_VMs/SPESE_FE_VM/SPESE_FE_VM.vmx
+vmrun start ~/VMware_VMs/SPESE_BE_VM/SPESE_BE_VM.vmx
+vmrun start ~/VMware_VMs/SPESE_DB_VM/SPESE_DB_VM.vmx
 
-### **Development Experience**
-- ✅ Production-like environment
-- ✅ Multi-node Kubernetes experience
-- ✅ Network troubleshooting skills
-- ✅ Distributed systems understanding
+# Verifica avvio
+vmrun list
+```
 
-### **Cloud Readiness**
-- ✅ Preparazione per AWS EKS
-- ✅ Multi-AZ deployment simulation
-- ✅ Container orchestration skills
+### Script helper per gestione:
+```bash
+# Crea script stop-all-vms.sh
+cat > ~/stop-all-vms.sh << 'EOF'
+#!/bin/bash
+echo "Stopping all SPESE VMs..."
+vmrun stop ~/VMware_VMs/SPESE_FE_VM/SPESE_FE_VM.vmx soft
+vmrun stop ~/VMware_VMs/SPESE_BE_VM/SPESE_BE_VM.vmx soft
+vmrun stop ~/VMware_VMs/SPESE_DB_VM/SPESE_DB_VM.vmx soft
+echo "Done. Current VMs:"
+vmrun list
+EOF
+chmod +x ~/stop-all-vms.sh
 
-## 🚀 Deployment Strategy
+# Crea script start-all-vms.sh
+cat > ~/start-all-vms.sh << 'EOF'
+#!/bin/bash
+echo "Starting all SPESE VMs..."
+vmrun start ~/VMware_VMs/SPESE_FE_VM/SPESE_FE_VM.vmx
+vmrun start ~/VMware_VMs/SPESE_BE_VM/SPESE_BE_VM.vmx
+vmrun start ~/VMware_VMs/SPESE_DB_VM/SPESE_DB_VM.vmx
+echo "Done. Current VMs:"
+vmrun list
+EOF
+chmod +x ~/start-all-vms.sh
+```
 
-### **Phase 1: Infrastructure**
-1. Terraform creates 3 VMs
-2. Bootstrap Kubernetes cluster
-3. Configure networking and storage
-4. Validate infrastructure health
+## 🗑️ Pulizia e Rimozione
 
-### **Phase 2: Application** 
-1. Deploy CRM manifests across cluster
-2. Configure load balancing and ingress
-3. Setup monitoring and logging
-4. Validate application functionality
+### Destroy completo con Terraform:
+```bash
+cd ~/CRM-Fase7/devops-pipeline-fase-7/terraform
+terraform destroy -auto-approve
+```
 
-## 🎉 Success Metrics
+### Pulizia manuale (se necessario):
+```bash
+# Stop VM
+vmrun list | grep SPESE | while read vm; do
+    vmrun stop "$vm" hard
+done
 
-- ✅ **Infrastructure:** 3 VMs running with K8s cluster healthy
-- ✅ **Application:** CRM accessible via load balancer
-- ✅ **Performance:** Response time < 500ms
-- ✅ **Resilience:** Survives single node failure
-- ✅ **Monitoring:** Health checks and metrics functional
+# Rimuovi directory VM
+sudo rm -rf ~/VMware_VMs/SPESE_*
+
+# Rimuovi file temporanei
+rm -f *.iso create-*.sh
+rm -rf .terraform* terraform.tfstate*
+```
+
+## 🐛 Troubleshooting
+
+### Problema: "Inconsistent dependency lock file"
+```bash
+rm -f .terraform.lock.hcl
+terraform init
+```
+
+### Problema: VM non si avvia
+```bash
+# Verifica servizi VMware
+sudo systemctl status vmware
+sudo systemctl restart vmware
+```
+
+### Problema: Autoinstall fallisce
+- Verificare che l'ISO Ubuntu sia presente in `/home/devops/images/`
+- Controllare spazio disco disponibile
+- Verificare console VM per errori specifici
+
+### Problema: SSH non funziona dopo installazione
+```bash
+# Verifica che la VM sia completamente avviata (15-20 min)
+# Controlla IP e connectivity
+ping 192.168.1.10X
+# Password di default: devops
+```
+
+## 📊 Risorse Create
+
+### File Terraform:
+- `main.tf` - Configurazione principale
+- `terraform.tfstate` - Stato Terraform
+- `.terraform.lock.hcl` - Lock providers
+
+### Script generati:
+- `create-iso-{FE,BE,DB}.sh` - Script creazione ISO
+- `create-vm-{FE,BE,DB}.sh` - Script creazione VM
+
+### ISO Autoinstall:
+- `SPESE_FE_VM-autoinstall.iso` (rimosso dopo deploy)
+- `SPESE_BE_VM-autoinstall.iso` (rimosso dopo deploy)
+- `SPESE_DB_VM-autoinstall.iso` (rimosso dopo deploy)
+
+### Directory VM:
+- `~/VMware_VMs/SPESE_FE_VM/`
+- `~/VMware_VMs/SPESE_BE_VM/`
+- `~/VMware_VMs/SPESE_DB_VM/`
+
+## ⏱️ Tempistiche
+
+- **Deploy completo**: ~37 minuti
+- **Destroy completo**: ~2 minuti
+- **Start VM**: ~30 secondi per VM
+- **Stop VM**: ~10 secondi per VM
+
+## 🔐 Credenziali Default
+
+- **Username**: devops
+- **Password**: devops
+- **Sudo**: NOPASSWD configurato
+
+## 📝 Note Importanti
+
+1. **Timeout**: Gli script aspettano max 30 minuti per l'installazione, poi proseguono
+2. **Cleanup ISO**: Gli ISO vengono rimossi automaticamente dopo il timeout per risparmiare spazio
+3. **No SSH check**: Gli script non verificano SSH per evitare blocchi su password
+4. **Exit sempre 0**: Gli script terminano sempre con successo per non bloccare Terraform
+
+## 🎯 Prossimi Passi
+
+Dopo il deploy delle VM:
+1. Verificare accesso SSH a tutte le VM
+2. Procedere con installazione Kubernetes (Fase 8)
+3. Deploy applicazione CRM (Fase 9)
 
 ---
-
-**Ready to implement Infrastructure as Code with Terraform!** 🏗️
+*Documentazione aggiornata: Gennaio 2025*
