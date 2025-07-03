@@ -91,7 +91,11 @@ genisoimage -r -V "Ubuntu Autoinstall" \
     -o "$(pwd)/$VM_NAME-autoinstall.iso" \
     . >/dev/null 2>&1
 
+# Copy ISO to terraform directory before cleanup
+cp "$WORK_DIR/source-files/$VM_NAME-autoinstall.iso" "$(pwd)/" || { echo "Failed to copy ISO"; exit 1; }
+
 cd - >/dev/null
 rm -rf "$WORK_DIR"
 
 echo "✓ Created $VM_NAME-autoinstall.iso"
+ls -la "$(pwd)/$VM_NAME-autoinstall.iso"
