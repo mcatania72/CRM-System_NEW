@@ -198,53 +198,16 @@ resource "null_resource" "create_vms" {
 }
 
 # =============================================================================
-# STEP 4: WAIT FOR INSTALLATION COMPLETION
+# STEP 4: WAIT FOR INSTALLATION COMPLETION - REMOVED (già fatto negli script)
 # =============================================================================
-
-resource "null_resource" "wait_for_vms" {
-  for_each = local.vms
-  
-  depends_on = [null_resource.create_vms]
-  
-  provisioner "local-exec" {
-    command = <<-EOT
-      echo "Waiting for VM ${each.value.name} installation to complete..."
-      
-      # Wait for SSH to be ready (indicates installation complete)
-      TIMEOUT=1800  # 30 minutes
-      ELAPSED=0
-      INTERVAL=30
-      
-      while [ $ELAPSED -lt $TIMEOUT ]; do
-        if ping -c 1 ${each.value.ip_address} >/dev/null 2>&1; then
-          echo "VM ${each.value.name} responding to ping"
-          
-          if timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o PasswordAuthentication=no \
-             ${var.username}@${each.value.ip_address} 'echo "SSH ready"' >/dev/null 2>&1; then
-            echo "✅ ${each.value.name} installation completed and SSH ready!"
-            break
-          fi
-        fi
-        
-        sleep $INTERVAL
-        ELAPSED=$((ELAPSED + INTERVAL))
-        echo "Installation progress: $((ELAPSED / 60)) minutes elapsed..."
-      done
-      
-      if [ $ELAPSED -ge $TIMEOUT ]; then
-        echo "❌ Installation timeout for ${each.value.name}"
-        exit 1
-      fi
-    EOT
-  }
-}
+# Rimosso perché gli script create-vm già aspettano 30 minuti
 
 # =============================================================================
 # STEP 5: CLEANUP POST-DEPLOYMENT
 # =============================================================================
 
 resource "null_resource" "cleanup_post_deploy" {
-  depends_on = [null_resource.wait_for_vms]
+  depends_on = [null_resource.create_vms]
   
   triggers = {
     timestamp = timestamp()
