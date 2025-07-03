@@ -332,9 +332,15 @@ cleanup_iso_files() {
     fi
     
     # Also remove the create-iso script for this VM
-    CREATE_ISO_SCRIPT="create-iso-${vm_name#SPESE_}.sh"
-    CREATE_ISO_SCRIPT="${CREATE_ISO_SCRIPT%_VM}.sh"
-    if [ -f "$CREATE_ISO_SCRIPT" ]; then
+    # Simply use the VM name to determine the script name
+    case "$VM_NAME" in
+        *FE_VM) CREATE_ISO_SCRIPT="create-iso-FE.sh" ;;
+        *BE_VM) CREATE_ISO_SCRIPT="create-iso-BE.sh" ;;
+        *DB_VM) CREATE_ISO_SCRIPT="create-iso-DB.sh" ;;
+        *) CREATE_ISO_SCRIPT="" ;;
+    esac
+    
+    if [ -n "$CREATE_ISO_SCRIPT" ] && [ -f "$CREATE_ISO_SCRIPT" ]; then
         rm -f "$CREATE_ISO_SCRIPT"
         log_success "Removed $CREATE_ISO_SCRIPT"
     fi
