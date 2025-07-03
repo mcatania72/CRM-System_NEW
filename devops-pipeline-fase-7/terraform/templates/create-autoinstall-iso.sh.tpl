@@ -81,6 +81,9 @@ menuentry "Ubuntu Autoinstall" {
 }
 GRUBCFG
 
+# Save current directory
+ORIGINAL_DIR="$(pwd)"
+
 # Create ISO
 cd "$WORK_DIR/source-files"
 genisoimage -r -V "Ubuntu Autoinstall" \
@@ -88,14 +91,14 @@ genisoimage -r -V "Ubuntu Autoinstall" \
     -b boot/grub/i386-pc/eltorito.img \
     -c boot.catalog -no-emul-boot \
     -boot-load-size 4 -boot-info-table \
-    -o "$(pwd)/$VM_NAME-autoinstall.iso" \
+    -o "$VM_NAME-autoinstall.iso" \
     . >/dev/null 2>&1
 
-# Copy ISO to terraform directory before cleanup
-cp "$WORK_DIR/source-files/$VM_NAME-autoinstall.iso" "$(pwd)/" || { echo "Failed to copy ISO"; exit 1; }
+# Copy ISO to original terraform directory
+cp "$VM_NAME-autoinstall.iso" "$ORIGINAL_DIR/" || { echo "Failed to copy ISO"; exit 1; }
 
 cd - >/dev/null
 rm -rf "$WORK_DIR"
 
 echo "✓ Created $VM_NAME-autoinstall.iso"
-ls -la "$(pwd)/$VM_NAME-autoinstall.iso"
+ls -la "$ORIGINAL_DIR/$VM_NAME-autoinstall.iso"
