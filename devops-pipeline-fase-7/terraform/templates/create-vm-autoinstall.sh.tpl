@@ -254,6 +254,7 @@ wait_for_installation() {
                $USERNAME@"$IP_ADDRESS" 'echo "SSH ready"' >/dev/null 2>&1; then
                 log_success "Ubuntu autoinstall completed successfully!"
                 log_success "VM is ready and accessible via SSH"
+                cleanup_iso_files  # Cleanup on success
                 return 0
             fi
         fi
@@ -276,6 +277,7 @@ wait_for_installation() {
     
     log_error "Installation timeout reached"
     log_error "Check VM console for installation status"
+    cleanup_iso_files  # Cleanup on timeout
     return 1
 }
 
@@ -302,6 +304,27 @@ verify_installation() {
     SYSTEM_INFO=$(ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no \
                   $USERNAME@"$IP_ADDRESS" 'uname -a && whoami' 2>/dev/null || echo "SSH connection failed")
     log_info "System info: $SYSTEM_INFO"
+}
+
+cleanup_iso_files() {
+    log_info "Cleaning up ISO files to save disk space..."
+    
+    # Remove the autoinstall ISO for this VM
+    if [ -f "$AUTOINSTALL_ISO" ]; then
+        rm -f "$AUTOINSTALL_ISO"
+        log_success "Removed $AUTOINSTALL_ISO"
+    fi
+    
+    # Also remove the create-iso script for this VM
+    CREATE_ISO_SCRIPT="create-iso-${vm_name#SPESE_}.sh"
+    CREATE_ISO_SCRIPT="${CREATE_ISO_SCRIPT%_VM}.sh"
+    if [ -f "$CREATE_ISO_SCRIPT" ]; then
+        rm -f "$CREATE_ISO_SCRIPT"
+        log_success "Removed $CREATE_ISO_SCRIPT"
+    fi
+    
+    # Show disk space after cleanup
+    log_info "Disk usage after cleanup: $(df -h / | awk 'NR==2 {print $5}')"
 }
 
 show_vm_info() {
@@ -359,4 +382,7 @@ main() {
 }
 
 # Execute main function
+# Set trap to cleanup on exit
+trap cleanup_iso_files EXIT
+
 main "$@"

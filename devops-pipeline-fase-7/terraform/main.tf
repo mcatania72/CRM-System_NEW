@@ -240,6 +240,45 @@ resource "null_resource" "wait_for_vms" {
 }
 
 # =============================================================================
+# STEP 5: CLEANUP POST-DEPLOYMENT
+# =============================================================================
+
+resource "null_resource" "cleanup_post_deploy" {
+  depends_on = [null_resource.wait_for_vms]
+  
+  triggers = {
+    timestamp = timestamp()
+  }
+  
+  provisioner "local-exec" {
+    command = <<-EOT
+      echo "=== Starting post-deployment cleanup ==="
+      
+      # 1. Remove autoinstall ISOs
+      for iso in SPESE_*_VM-autoinstall.iso; do
+        if [ -f "$iso" ]; then
+          echo "Removing $iso"
+          rm -f "$iso"
+        fi
+      done
+      
+      # 2. Clean temporary files
+      rm -f /tmp/vm_creation_*.log
+      rm -f /tmp/iso-*
+      
+      # 3. Remove creation scripts if not needed
+      # rm -f create-iso-*.sh create-vm-*.sh
+      
+      echo "=== Cleanup completed ==="
+      
+      # Show disk usage
+      echo "Disk usage after cleanup:"
+      df -h /
+    EOT
+  }
+}
+
+# =============================================================================
 # OUTPUTS
 # =============================================================================
 
