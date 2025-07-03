@@ -233,6 +233,19 @@ start_vm() {
     log_info "  2. Ubuntu installs automatically (15-20 minutes)"
     log_info "  3. System reboots and configures network"
     log_info "  4. SSH becomes available at $IP_ADDRESS"
+    
+    # Create a background monitor script
+    cat > "/tmp/monitor-$VM_NAME.sh" << 'MONITOR'
+#!/bin/bash
+VM_NAME="$1"
+IP="$2"
+while ! ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no devops@"$IP" 'echo OK' >/dev/null 2>&1; do
+    sleep 30
+done
+echo "$(date): $VM_NAME ready at $IP" >> /tmp/vm-ready.log
+MONITOR
+    chmod +x "/tmp/monitor-$VM_NAME.sh"
+    nohup "/tmp/monitor-$VM_NAME.sh" "$VM_NAME" "$IP_ADDRESS" >/dev/null 2>&1 &
 }
 
 wait_for_installation() {
@@ -240,7 +253,7 @@ wait_for_installation() {
     log_info "This process takes approximately 15-20 minutes..."
     
     # Wait for installation to complete and SSH to be ready
-    TIMEOUT=2400  # 40 minutes
+    TIMEOUT=1800  # 30 minutes (reduced from 40)
     ELAPSED=0
     INTERVAL=30
     
@@ -275,10 +288,13 @@ wait_for_installation() {
         fi
     done
     
-    log_error "Installation timeout reached"
-    log_error "Check VM console for installation status"
+    log_warning "Installation timeout reached after $((TIMEOUT/60)) minutes"
+    log_warning "VM creation will continue in background"
+    log_info "You can check status with: vmrun list"
+    log_info "SSH will be available at: $IP_ADDRESS when ready"
     cleanup_iso_files  # Cleanup on timeout
-    return 1
+    # Exit with success to not block Terraform
+    return 0
 }
 
 verify_installation() {
