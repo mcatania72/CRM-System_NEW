@@ -219,7 +219,7 @@ resource "null_resource" "wait_for_vms" {
         if ping -c 1 ${each.value.ip_address} >/dev/null 2>&1; then
           echo "VM ${each.value.name} responding to ping"
           
-          if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+          if timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o PasswordAuthentication=no \
              ${var.username}@${each.value.ip_address} 'echo "SSH ready"' >/dev/null 2>&1; then
             echo "✅ ${each.value.name} installation completed and SSH ready!"
             break

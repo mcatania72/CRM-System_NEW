@@ -254,7 +254,7 @@ wait_for_installation() {
     log_info "This process takes approximately 15-20 minutes..."
     
     # Wait for installation to complete - simplified timeout only
-    TIMEOUT=1200  # 20 minutes
+    TIMEOUT=1800  # 30 minutes
     ELAPSED=0
     INTERVAL=30
     
@@ -275,8 +275,24 @@ wait_for_installation() {
     log_info "You can check status with: vmrun list"
     log_info "SSH will be available at: $IP_ADDRESS when ready"
     
+    # Cleanup ISO after timeout
+    cleanup_iso_files
+    
     # Always exit with success after timeout
     return 0
+}
+
+cleanup_iso_files() {
+    log_info "Cleaning up ISO files to save disk space..."
+    
+    # Remove the autoinstall ISO for this VM
+    if [ -f "$AUTOINSTALL_ISO" ]; then
+        rm -f "$AUTOINSTALL_ISO"
+        log_success "Removed $AUTOINSTALL_ISO"
+    fi
+    
+    # Show disk space after cleanup
+    log_info "Disk usage after cleanup: $(df -h / | awk 'NR==2 {print $5}')"
 }
 
 show_vm_info() {
