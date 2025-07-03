@@ -150,8 +150,8 @@ deploy_single_vm() {
     
     # Apply solo per questa VM
     echo "Creating VM with Terraform..."
-    terraform apply -target="null_resource.create_autoinstall_iso[$target]" -auto-approve
-    terraform apply -target="null_resource.create_vms[$target]" -auto-approve
+    terraform apply -target='null_resource.create_autoinstall_iso["'$target'"]' -auto-approve
+    terraform apply -target='null_resource.create_vms["'$target'"]' -auto-approve
     
     echo ""
     echo -e "${GREEN}$vm_name deployment started!${NC}"
