@@ -8,17 +8,7 @@ VM_ROLE="${vm_role}"
 USERNAME="${username}"
 PASSWORD="${password}"
 
-echo "Creating autoinstall ISO for $VM_NAME (FASE 7.1 - FIXED)..."
-
-# Genera hash password dinamicamente - FIX: usiamo metodo più affidabile
-if command -v mkpasswd &> /dev/null; then
-    PASSWORD_HASH=$(mkpasswd -m sha-512 "$PASSWORD")
-else
-    # Fallback con Python
-    PASSWORD_HASH=$(python3 -c "import crypt; print(crypt.crypt('$PASSWORD', crypt.mksalt(crypt.METHOD_SHA512)))")
-fi
-
-echo "Generated password hash for user $USERNAME"
+echo "Creating autoinstall ISO for $VM_NAME (FASE 7.1 - PLAINTEXT TEST)..."
 
 WORK_DIR="/tmp/iso-$VM_NAME-$$"
 mkdir -p "$WORK_DIR/source-files"
@@ -32,7 +22,7 @@ mkdir -p "$WORK_DIR/source-files/autoinstall"
 # SSH public key per zero-touch (se disponibile)
 SSH_PUB_KEY="${ssh_public_key}"
 
-# Create user-data - LATE COMMANDS SEMPLIFICATI!
+# Create user-data - PASSWORD IN CHIARO PER TEST!
 cat > "$WORK_DIR/source-files/autoinstall/user-data" << USERDATA
 #cloud-config
 autoinstall:
@@ -51,8 +41,8 @@ autoinstall:
           addresses: [8.8.8.8, 8.8.4.4]
     version: 2
   identity:
-    hostname: ${VM_NAME,,}
-    password: "$PASSWORD_HASH"
+    hostname: $${VM_NAME,,}
+    password: $PASSWORD
     username: $USERNAME
   ssh:
     allow-pw: true
@@ -75,7 +65,7 @@ autoinstall:
     - echo '$USERNAME ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/$USERNAME
     - chmod 440 /target/etc/sudoers.d/$USERNAME
     
-    # FASE 7.1 - SEMPLIFICATI - NO HEREDOC, NO CAT COMPLESSI
+    # FASE 7.1 - SEMPLIFICATI
     # Docker è già installato dai packages, abilitiamolo
     - curtin in-target --target=/target -- systemctl enable docker
     
@@ -96,8 +86,8 @@ autoinstall:
     - curtin in-target --target=/target -- mkdir -p /etc/docker
     - echo '{"insecure-registries":["192.168.1.101:5000"]}' > /target/etc/docker/daemon.json
     
-    # Nota: il gruppo docker sarà creato al primo avvio del servizio
-    # L'utente dovrà fare logout/login per usarlo
+    # Debug info
+    - echo "User $USERNAME created with plaintext password for testing" > /target/var/log/autoinstall-debug.log
 USERDATA
 
 # Create meta-data
@@ -120,7 +110,7 @@ ORIGINAL_DIR="$(pwd)"
 
 # Create ISO
 cd "$WORK_DIR/source-files"
-genisoimage -r -V "Ubuntu 7.1 Fix" \
+genisoimage -r -V "Ubuntu 7.1 Plain" \
     -cache-inodes -J -l -joliet-long \
     -b boot/grub/i386-pc/eltorito.img \
     -c boot.catalog -no-emul-boot \
@@ -134,7 +124,8 @@ cp "$VM_NAME-autoinstall.iso" "$ORIGINAL_DIR/" || { echo "Failed to copy ISO"; e
 cd - >/dev/null
 rm -rf "$WORK_DIR"
 
-echo "✓ Created $VM_NAME-autoinstall.iso (FASE 7.1 - FIXED)"
-echo "  Password hash: [hidden]"
+echo "✓ Created $VM_NAME-autoinstall.iso (FASE 7.1 - PLAINTEXT TEST)"
+echo "  Username: $USERNAME"
+echo "  Password: [plaintext - for testing only]"
 echo "  SSH key: ${ssh_public_key:0:50}..."
 ls -la "$ORIGINAL_DIR/$VM_NAME-autoinstall.iso"
