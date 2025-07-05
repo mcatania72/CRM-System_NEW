@@ -127,5 +127,6 @@ rm -rf "$WORK_DIR"
 echo "✓ Created $VM_NAME-autoinstall.iso (FASE 7.1 - PLAINTEXT TEST)"
 echo "  Username: $USERNAME"
 echo "  Password: [plaintext - for testing only]"
-echo "  SSH key: ${ssh_public_key:0:50}..."
+echo "  SSH key: $SSH_PUB_KEY" | head -c 50
+echo "..."
 ls -la "$ORIGINAL_DIR/$VM_NAME-autoinstall.iso"
