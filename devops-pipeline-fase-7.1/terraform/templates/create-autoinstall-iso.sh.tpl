@@ -8,7 +8,10 @@ VM_ROLE="${vm_role}"
 USERNAME="${username}"
 PASSWORD="${password}"
 
-echo "Creating autoinstall ISO for $VM_NAME (FASE 7.1 - PLAINTEXT TEST)..."
+echo "Creating autoinstall ISO for $VM_NAME (FASE 7.1 - USER FIX)..."
+
+# Crea hostname semplice
+HOSTNAME=$(echo "$VM_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/_/-/g')
 
 WORK_DIR="/tmp/iso-$VM_NAME-$$"
 mkdir -p "$WORK_DIR/source-files"
@@ -22,7 +25,7 @@ mkdir -p "$WORK_DIR/source-files/autoinstall"
 # SSH public key per zero-touch (se disponibile)
 SSH_PUB_KEY="${ssh_public_key}"
 
-# Create user-data - PASSWORD IN CHIARO PER TEST!
+# Create user-data - CON FIX PER CREARE USER
 cat > "$WORK_DIR/source-files/autoinstall/user-data" << USERDATA
 #cloud-config
 autoinstall:
@@ -41,8 +44,8 @@ autoinstall:
           addresses: [8.8.8.8, 8.8.4.4]
     version: 2
   identity:
-    hostname: $(echo $VM_NAME | tr '[:upper:]' '[:lower:]' | sed 's/_vm//')
-    password: $PASSWORD
+    hostname: $HOSTNAME
+    password: '$6$xyz$74AlwKA3Z5n2L6ujMzm/zQXHCluA4SRc2mBfO2/O5uUc2yM2n2tnbBMi/IVRLJuKwfjrLZjAT7arSy/'
     username: $USERNAME
   ssh:
     allow-pw: true
@@ -54,40 +57,32 @@ autoinstall:
     - openssh-server
     - curl
     - git
-    - ca-certificates
-    - gnupg
-    - lsb-release
-    - apt-transport-https
-    - software-properties-common
     - docker.io
   late-commands:
+    # FASE 7.1 FIX - CREA USER SE NON ESISTE!
+    - curtin in-target --target=/target -- useradd -m -s /bin/bash $USERNAME || true
+    - echo '$USERNAME:$PASSWORD' | curtin in-target --target=/target -- chpasswd
+    
     # FASE 7 - Comandi base (funzionanti)
     - echo '$USERNAME ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/$USERNAME
     - chmod 440 /target/etc/sudoers.d/$USERNAME
     
-    # FASE 7.1 - SEMPLIFICATI
-    # Docker è già installato dai packages, abilitiamolo
+    # FASE 7.1 - Docker e SSH
     - curtin in-target --target=/target -- systemctl enable docker
-    
-    # SSH directory
     - curtin in-target --target=/target -- mkdir -p /home/$USERNAME/.ssh
     - curtin in-target --target=/target -- chmod 700 /home/$USERNAME/.ssh
     
-    # SSH authorized_keys (se abbiamo la chiave)
 %{ if ssh_public_key != "" }
     - echo '${ssh_public_key}' > /target/home/$USERNAME/.ssh/authorized_keys
     - curtin in-target --target=/target -- chmod 600 /home/$USERNAME/.ssh/authorized_keys
 %{ endif }
     
-    # Fix ownership
+    # Fix ownership - ora dovrebbe funzionare
     - curtin in-target --target=/target -- chown -R $USERNAME:$USERNAME /home/$USERNAME
     
-    # Docker daemon config - METODO SEMPLICE
+    # Docker config
     - curtin in-target --target=/target -- mkdir -p /etc/docker
     - echo '{"insecure-registries":["192.168.1.101:5000"]}' > /target/etc/docker/daemon.json
-    
-    # Debug info
-    - echo "User $USERNAME created with plaintext password for testing" > /target/var/log/autoinstall-debug.log
 USERDATA
 
 # Create meta-data
@@ -110,7 +105,7 @@ ORIGINAL_DIR="$(pwd)"
 
 # Create ISO
 cd "$WORK_DIR/source-files"
-genisoimage -r -V "Ubuntu 7.1 Plain" \
+genisoimage -r -V "Ubuntu 7.1 Fix" \
     -cache-inodes -J -l -joliet-long \
     -b boot/grub/i386-pc/eltorito.img \
     -c boot.catalog -no-emul-boot \
@@ -124,9 +119,7 @@ cp "$VM_NAME-autoinstall.iso" "$ORIGINAL_DIR/" || { echo "Failed to copy ISO"; e
 cd - >/dev/null
 rm -rf "$WORK_DIR"
 
-echo "✓ Created $VM_NAME-autoinstall.iso (FASE 7.1 - PLAINTEXT TEST)"
+echo "✓ Created $VM_NAME-autoinstall.iso (FASE 7.1 - USER FIX)"
 echo "  Username: $USERNAME"
-echo "  Password: [plaintext - for testing only]"
-echo "  SSH key: $SSH_PUB_KEY" | head -c 50
-echo "..."
+echo "  Password: devops (plaintext in chpasswd)"
 ls -la "$ORIGINAL_DIR/$VM_NAME-autoinstall.iso"
