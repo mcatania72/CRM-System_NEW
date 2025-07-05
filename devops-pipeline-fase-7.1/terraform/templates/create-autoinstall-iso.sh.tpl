@@ -41,7 +41,7 @@ autoinstall:
           addresses: [8.8.8.8, 8.8.4.4]
     version: 2
   identity:
-    hostname: $${VM_NAME,,}
+    hostname: $(echo $VM_NAME | tr '[:upper:]' '[:lower:]' | sed 's/_vm//')
     password: $PASSWORD
     username: $USERNAME
   ssh:
