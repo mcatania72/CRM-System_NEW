@@ -8,7 +8,7 @@ VM_ROLE="${vm_role}"
 USERNAME="${username}"
 PASSWORD="${password}"
 
-echo "Creating autoinstall ISO for $VM_NAME (FASE 7.1 - USER FIX)..."
+echo "Creating autoinstall ISO for $VM_NAME (FASE 7.1 - OPTION C FIX)..."
 
 # Crea hostname semplice
 HOSTNAME=$(echo "$VM_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/_/-/g')
@@ -22,10 +22,10 @@ mkdir -p "$WORK_DIR/source-files"
 # Create autoinstall directory
 mkdir -p "$WORK_DIR/source-files/autoinstall"
 
-# SSH public key per zero-touch (se disponibile)
+# SSH public key per zero-touch
 SSH_PUB_KEY="${ssh_public_key}"
 
-# Create user-data - CON FIX PER CREARE USER
+# Create user-data - OPZIONE C: ORDINE CORRETTO
 cat > "$WORK_DIR/source-files/autoinstall/user-data" << USERDATA
 #cloud-config
 autoinstall:
@@ -58,31 +58,59 @@ autoinstall:
     - curl
     - git
     - docker.io
+    - ca-certificates
+    - gnupg
   late-commands:
-    # FASE 7.1 FIX - CREA USER SE NON ESISTE!
-    - curtin in-target --target=/target -- useradd -m -s /bin/bash $USERNAME || true
+    # OPZIONE C - ORDINE OTTIMIZZATO PER ZERO TOUCH
+    
+    # 1. CREA USER (se non creato da identity)
+    - curtin in-target --target=/target -- useradd -m -s /bin/bash $USERNAME || echo "User already exists"
     - echo '$USERNAME:$PASSWORD' | curtin in-target --target=/target -- chpasswd
     
-    # FASE 7 - Comandi base (funzionanti)
+    # 2. SUDOERS
     - echo '$USERNAME ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/$USERNAME
     - chmod 440 /target/etc/sudoers.d/$USERNAME
     
-    # FASE 7.1 - Docker e SSH
+    # 3. DOCKER - Start service per creare gruppo
     - curtin in-target --target=/target -- systemctl enable docker
+    - curtin in-target --target=/target -- systemctl start docker || true
+    # Aspetta che Docker crei il gruppo
+    - curtin in-target --target=/target -- sleep 5
+    # Crea gruppo se non esiste
+    - curtin in-target --target=/target -- groupadd -f docker || true
+    # Aggiungi user al gruppo
+    - curtin in-target --target=/target -- usermod -aG docker $USERNAME
+    
+    # 4. SSH SETUP - CRITICO PER ZERO TOUCH
     - curtin in-target --target=/target -- mkdir -p /home/$USERNAME/.ssh
     - curtin in-target --target=/target -- chmod 700 /home/$USERNAME/.ssh
     
+    # 5. SSH KEY - METODO PIÙ ROBUSTO
 %{ if ssh_public_key != "" }
-    - echo '${ssh_public_key}' > /target/home/$USERNAME/.ssh/authorized_keys
+    # Scrivi la chiave pubblica direttamente
+    - |
+      cat > /target/home/$USERNAME/.ssh/authorized_keys << 'SSHKEY'
+      ${ssh_public_key}
+      SSHKEY
     - curtin in-target --target=/target -- chmod 600 /home/$USERNAME/.ssh/authorized_keys
 %{ endif }
     
-    # Fix ownership - ora dovrebbe funzionare
+    # 6. FIX OWNERSHIP - IMPORTANTE!
     - curtin in-target --target=/target -- chown -R $USERNAME:$USERNAME /home/$USERNAME
     
-    # Docker config
+    # 7. DOCKER DAEMON CONFIG
     - curtin in-target --target=/target -- mkdir -p /etc/docker
-    - echo '{"insecure-registries":["192.168.1.101:5000"]}' > /target/etc/docker/daemon.json
+    - |
+      cat > /target/etc/docker/daemon.json << 'DOCKERCONF'
+      {
+        "insecure-registries": ["192.168.1.101:5000"]
+      }
+      DOCKERCONF
+    
+    # 8. DEBUG INFO
+    - echo "Zero Touch setup completed for $USERNAME" > /target/var/log/zero-touch.log
+    - curtin in-target --target=/target -- id $USERNAME >> /target/var/log/zero-touch.log
+    - curtin in-target --target=/target -- groups $USERNAME >> /target/var/log/zero-touch.log
 USERDATA
 
 # Create meta-data
@@ -105,7 +133,7 @@ ORIGINAL_DIR="$(pwd)"
 
 # Create ISO
 cd "$WORK_DIR/source-files"
-genisoimage -r -V "Ubuntu 7.1 Fix" \
+genisoimage -r -V "Ubuntu 7.1 OptC" \
     -cache-inodes -J -l -joliet-long \
     -b boot/grub/i386-pc/eltorito.img \
     -c boot.catalog -no-emul-boot \
@@ -119,7 +147,10 @@ cp "$VM_NAME-autoinstall.iso" "$ORIGINAL_DIR/" || { echo "Failed to copy ISO"; e
 cd - >/dev/null
 rm -rf "$WORK_DIR"
 
-echo "✓ Created $VM_NAME-autoinstall.iso (FASE 7.1 - USER FIX)"
-echo "  Username: $USERNAME"
-echo "  Password: devops (plaintext in chpasswd)"
+echo "✓ Created $VM_NAME-autoinstall.iso (FASE 7.1 - OPTION C)"
+echo "  Zero Touch Features:"
+echo "  - User creation with password"
+echo "  - Docker group membership"
+echo "  - SSH key installation"
+echo "  - Docker daemon config"
 ls -la "$ORIGINAL_DIR/$VM_NAME-autoinstall.iso"
