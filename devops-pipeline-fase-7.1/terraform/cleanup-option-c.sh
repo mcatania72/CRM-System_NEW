@@ -70,13 +70,31 @@ echo "  ✓ Script generati rimossi"
 rm -rf /tmp/iso-SPESE* /tmp/vm_creation_*.log 2>/dev/null
 echo "  ✓ File temporanei rimossi"
 
-# 5. PULIZIA SSH KNOWN_HOSTS
+# 5. SETUP SSH CONFIG PER ZERO TOUCH
 echo ""
-echo -e "${YELLOW}[5/6] Pulizia SSH known hosts...${NC}"
+echo -e "${YELLOW}[5/6] Setup SSH config per Zero Touch...${NC}"
+
+# Pulisci known hosts
 for ip in 192.168.1.101 192.168.1.102 192.168.1.103; do
     ssh-keygen -f "$HOME/.ssh/known_hosts" -R "$ip" 2>/dev/null || true
 done
-echo -e "  ${GREEN}✓ Known hosts puliti${NC}"
+
+# Aggiungi SSH config se non esiste
+if ! grep -q "# CRM VMs Zero Touch" ~/.ssh/config 2>/dev/null; then
+    cat >> ~/.ssh/config << 'EOF'
+
+# CRM VMs Zero Touch
+Host 192.168.1.101 192.168.1.102 192.168.1.103
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    LogLevel ERROR
+    User devops
+EOF
+    chmod 600 ~/.ssh/config
+    echo -e "  ${GREEN}✓ SSH config aggiunta${NC}"
+else
+    echo -e "  ${GREEN}✓ SSH config già presente${NC}"
+fi
 
 # 6. VERIFICA SPAZIO DISCO
 echo ""
